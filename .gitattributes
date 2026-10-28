@@ -1,0 +1,41 @@
+# Normalização de fim de linha e detecção de binários
+* text=auto eol=lf
+
+# Código-fonte
+*.dart   text eol=lf
+*.py     text eol=lf
+*.md     text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.json   text eol=lf
+*.sql    text eol=lf
+*.toml   text eol=lf
+
+# Scripts de plataforma
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+*.sh     text eol=lf
+
+# Binários (nunca normalizar)
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.webp   binary
+*.ico    binary
+*.ttf    binary
+*.otf    binary
+*.mp3    binary
+*.ogg    binary
+*.opus   binary
+*.zip    binary
+*.aab    binary
+*.apk    binary
+*.ipa    binary
+
+# Segredos: se algum dia entrarem por engano, tratar como binário para não
+# vazar diff em log de CI. (A proteção real é o .gitignore.)
+*.pem    binary
+*.key    binary
+*.p12    binary
+*.jks    binary
