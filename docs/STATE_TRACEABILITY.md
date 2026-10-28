@@ -11,15 +11,16 @@
 
 | Item | Valor |
 |---|---|
-| Fase concluída | **Fase 1 — Setup e Rastreabilidade** |
-| Fase em andamento | **Fase 2 — Backend FastAPI** (base + migration prontas; auth/REST pendentes) |
+| Fase concluída | **Fase 1 — Setup** · **Fase 2 — Backend FastAPI** (187 testes) |
+| Fase em andamento | **Fase 3 — Nativo** (Android ✅ concluído; iOS pendente) |
 | Última atualização | 2026-10-28 |
 | Stack | Flutter · FastAPI (Python 3.12) · PostgreSQL/PostGIS · SQLite · WebSockets · FCM · OSM/`flutter_map` · `just_audio` · Opus |
 | Infra de produção | VPS Ubuntu `163.176.229.20`, usuário `ubuntu`, acesso por chave SSH |
-| Código de produção | `backend/` — 31 módulos, 42 arquivos formatados, **100 testes** |
-| Qualidade | `ruff check` ✅ · `ruff format --check` ✅ · `mypy --strict` ✅ (31 arquivos) |
+| Código de produção | `backend/` (52 arquivos `mypy`) + `app/` (Flutter 3.47.6 / Dart 3.13.5, `com.geoptt`) |
+| Qualidade backend | `ruff check` ✅ · `ruff format --check` ✅ · `mypy --strict` ✅ · `pytest` **187 passed** |
+| Qualidade app | `flutter analyze` **0 issues** · `flutter test` **25 passed** · JUnit **27 passed** · `assembleDebug` ✅ |
 | Migration | `0001_initial` — 9 tabelas, PostGIS + pgcrypto, validada em modo **offline** |
-| Repositório Git | **inicializado** em `main`; Fase 1 em `e1c1379`, Fase 2 commitada (entrada #003) |
+| Repositório Git | **inicializado** em `main`; Fase 1 `e1c1379`, Fase 2 `c6117f6`, Fase 3 Android (entrada #005) |
 | Segredos no repositório | **nenhum** (verificado no index e no histórico) |
 | Chave SSH | `C:\Nexo\ssh-key-2026-09-24.key` — presente no disco, **ignorada pelo Git** |
 
@@ -521,6 +522,155 @@ docs/STATE_TRACEABILITY.md                          (esta entrada)
 
 ```
 c6117f6  feat(backend): fecha Fase 2 com REST, OpenAPI e Argon2id
+```
+
+---
+
+### 2026-10-28 — Entrada #005 — Fase 3 (Android): relay nativo, wake-up por FCM e ponte tipada
+
+**Contexto:** a Fase 2 (backend) estava concluída e commitada. O usuário aprovou um
+primeiro incremento da Fase 3 **100% Android**, por ser o cenário mais agressivo de
+swipe-away e de otimização de bateria. O objetivo era provar que o app sobrevive ao
+swipe-away e acorda com a UI morta — não construir UI de produto.
+
+**O que foi feito**
+
+1. **Scaffold Flutter** em `app/` (`flutter create --platforms=android --org com
+   --project-name geoptt --android-language kotlin`): Flutter 3.47.6 / Dart 3.13.5,
+   AGP 9.1.0, Kotlin 2.4.0, Gradle 9.3.1, `applicationId`/`namespace` `com.geoptt`.
+   `analysis_options.yaml` com `strict-casts`, `strict-inference`, `strict-raw-types`
+   e lints de contrato (`avoid_dynamic_calls`, `unawaited_futures`, ...).
+2. **Docs-first (gate §8)** antes de qualquer código: `ARCHITECTURE.md` ganhou
+   §4.1 "Contrato nativo Android (Fase 3)" (tabela de arquivos, payload FCM aceito,
+   contrato `MethodChannel`/`EventChannel`, cascata de `foregroundServiceType`,
+   regras de WakeLock, justificativa da substituição do serviço do FlutterFire, regra
+   de boot, exigência de Gradle/BOM), §10 ganhou **R8** (acoplamento com classe
+   interna do FlutterFire) e **R9** (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` na Play
+   Store) e §11 registrou **ADR-007** (token FCM vs FID).
+3. **Manifesto** (`AndroidManifest.xml`) com o conjunto completo de permissões
+   (`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_LOCATION`,
+   `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`,
+   `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `POST_NOTIFICATIONS`, localização em
+   background, `RECORD_AUDIO`), `BackgroundRelayService` com
+   `foregroundServiceType="microphone|location|mediaPlayback"` e `stopWithTask="false"`,
+   `BootReceiver`, `GeoPttMessagingService` e `tools:node="remove"` no serviço do
+   FlutterFire. Manifesto de **debug** ganhou `usesCleartextTraffic="true"` (release
+   continua bloqueando cleartext).
+4. **Pacote nativo** `com.geoptt.background` (9 arquivos Kotlin): `RelayContract`
+   (fonte única de strings), `WakeupPayload` + parser puro (testável em JVM),
+   `RelayPreferences`, `RelayController` (estado de processo + sink de eventos),
+   `RelayNotifications`, `BackgroundRelayService`, `BootReceiver`,
+   `GeoPttMessagingService` e `BackgroundChannel`. `MainActivity` reescrita para
+   hospedar a ponte e encaminhar `onResume`/`onRequestPermissionsResult`.
+5. **Ponte Dart** em `lib/features/background/`: `platform_map.dart` (leitura estrita
+   de mapas do canal), `relay_models.dart`, `background_event.dart` (`sealed`),
+   `background_bridge.dart`, `push_messaging.dart` (handler de background com
+   `@pragma('vm:entry-point')` fora de classe) e `battery_optimization_prompt.dart`
+   (pedido gracioso de isenção). `main.dart` virou uma página **temporária** de
+   diagnóstico para validar em aparelho.
+6. **Testes**: 27 casos JVM (`WakeupPayloadParserTest` + `RelayPolicyTest`) e 25 casos
+   Dart (`background_bridge_test`, `background_event_test`).
+7. **Gradle**: `androidx.core:core-ktx:1.17.0`, `firebase-bom` + `firebase-messaging`
+   declarados no módulo do app, plugin `google-services` aplicado **condicionalmente** à
+   existência de `google-services.json`, `junit:junit:4.13.2` para os testes JVM e
+   `proguard-rules.pro` já ligado ao `buildTypes.release` (minificação desligada até a
+   Fase 6).
+8. **Revisão de código** (`revisor`) com 2 bloqueadores e 1 alto — todos corrigidos antes
+   do commit (D53–D58).
+
+**Decisões técnicas tomadas**
+
+| # | Decisão | Justificativa |
+|---|---|---|
+| D41 | Camada nativa contém **só ciclo de vida do SO** (zero regra de negócio, zero rede) | o Kotlin roda com a UI morta e sem isolate Dart; qualquer lógica ali viraria um segundo produto sem testes de domínio |
+| D42 | `foregroundServiceType` negociado em cascata (completo → `location\|mediaPlayback` → `mediaPlayback` → recusa) | Android 14+ recusa `microphone` quando o FGS nasce em background; `startForeground` lança `SecurityException` e derrubaria o processo. Receber áudio importa mais que falar |
+| D43 | WakeLock **sempre** com timeout (10 min no serviço, renovado por evento; 15 s no handler de FCM) | `acquire()` sem timeout é a receita de denúncia por drenagem de bateria; o lock curto cobre o intervalo entre o broadcast e o `onCreate` do serviço |
+| D44 | `BootReceiver` só religa o relay quando `relay_enabled=true` está persistido | religar sozinho significaria transmitir localização sem consentimento — inaceitável em produto de rastreamento |
+| D45 | `GeoPttMessagingService` **herda** de `FlutterFirebaseMessagingService` e chama `super`; o serviço do plugin é removido com `tools:node="remove"` | em `firebase_messaging` 17 o serviço do plugin é no-op para mensagens (a entrega ao Dart passa pelo `FlutterFirebaseMessagingReceiver`), mas `onNewToken`/`onRegistered` vivem nele — herdar mantém o stream de token do Dart. Dois serviços com `MESSAGING_EVENT` no manifesto final é o mecanismo documentado do Firebase (o nosso, prioridade 0, vence o do AAR, prioridade -500) |
+| D46 | `firebase-messaging` é declarado no `app/build.gradle.kts` sob `platform("…firebase-bom:<FirebaseSDKVersion>")`, com a versão lida da propriedade publicada pelo `firebase_core` | `implementation` de subprojeto de plugin não vaza para o classpath de compilação do `:app` (foi exatamente o erro de compilação); ler a propriedade evita drift em upgrade do FlutterFire |
+| D47 | Plugin `google-services` aplicado condicionalmente a `file("google-services.json").exists()` | o JSON é gitignored; sem a condicional qualquer build local falharia por inteiro. Efeito colateral aceito e logado: build local compila sem FCM |
+| D48 | Mantido `getToken()`/`onTokenRefresh` (depreciados) com `ignore` **localizado** e comentado | o backend envia com `messaging.Message(token=...)` e persiste `users.fcm_token`; trocar só o cliente faria o servidor mirar um identificador que não conhece. Migração cliente+servidor é a **ADR-007**, junto do deploy |
+| D49 | Eventos do `EventChannel` são `sealed`; payload inválido vira `UnknownBackgroundEvent` em vez de exceção | um `switch` sem `default` quebra a compilação quando o Kotlin ganha evento novo, e um `FormatException` no stream perderia um wake-up (chamada perdida) |
+| D50 | `.gitignore` passou de `data/` para `/data/` e `/pgdata/` | o padrão sem âncora ignorava silenciosamente `app/lib/features/*/data/` — as pastas de data layer de **todas** as features Flutter |
+| D51 | `startRelay` só responde depois que o serviço entra em foreground, com timeout de 5 s e erro `ACTIVITY_DETACHED` no `detach` | `startForegroundService` é assíncrono; responder `started` no ato mascararia a recusa do SO. E `Future` pendente ao morrer a Activity trava a UI em spinner |
+| D52 | `main.dart` é uma página de diagnóstico descartável | validar swipe-away/reboot exige botões que não existem na UI de produto; a tela sai nas Fases 4–5 |
+| D53 | `relay_enabled` é **consentimento** também no caminho FCM: wake-up com o canal desligado é publicado mas **não** sobe o FGS | sem isso, desligar o PTT na notificação era revertido pelo próximo Data Message — o app voltava a transmitir localização sem autorização (bloqueador B1 da revisão) |
+| D54 | Reentrada no serviço **nunca** renegocia tipos; upgrade só quando a origem é `ui` | `startForeground` substitui o conjunto concedido: reexecutar a escada a cada wake-up rebaixaria `microphone` para `location\|mediaPlayback` e a fala morreria em silêncio (bloqueador B2) |
+| D55 | Escada de boot reduzida a `location` na API ≥ 35 | Android 15 proíbe `mediaPlayback`/`microphone` a partir de `BOOT_COMPLETED`; qualquer outra tentativa lançaria `ForegroundServiceStartNotAllowedException` e o relay nunca voltaria após reboot (alto A1) |
+| D56 | Regras de tipo e consentimento extraídas para `RelayPolicy` (puro, `sdkInt` injetado) | era o único jeito de testar API 28→36 sem emulador; 16 casos JVM cobrem boot 34 vs 35, escadas `ui`/`fcm` e gating de consentimento |
+| D57 | `relay_enabled` persistido com `commit()` (não `apply()`) | `apply()` é assíncrono e o processo pode ser morto antes do flush — exatamente o cenário de swipe-away/low-memory killer que o módulo existe para sobreviver |
+| D58 | Wake-up pendente expira em **300 s** pelo relógio monotônico (`elapsedRealtime`) | um `PTT_DOWN` de minutos atrás não é chamada a atender; usar o `ts` do servidor sofreria skew de relógio entre aparelho e VPS |
+| D59 | `BackgroundBridge` traduz qualquer desvio de contrato em `BackgroundBridgeException` (`SERVICE_UNAVAILABLE` para resposta vazia, `CONTRACT_VIOLATION` para tipo/campo errado) | antes um `FormatException` cru vazava para a UI e um `Map` vazio passava por "sem dados"; `MissingPluginException` agora é `UNSUPPORTED` |
+| D60 | `PushMessaging` só **lê** o estado na inicialização; `POST_NOTIFICATIONS` é pedido sob demanda (`requestPermission`) | diálogo no boot, sem contexto, queima a única chance de conceder — e a negativa é difícil de reverter |
+| D61 | Handler de background registrado em `main()` **antes** do `runApp` | data message pode chegar durante a inicialização da UI (app aberto pela notificação); registrar depois do primeiro frame é tarde quando o app está morto |
+| D62 | `QUICKBOOT_POWERON` removido do manifesto e do `BootReceiver` | não é broadcast protegido: um receiver exportado aceitaria o action de qualquer app instalado e forçaria start de FGS |
+
+**Verificações executadas**
+
+- [x] `flutter analyze` → **No issues found!** (era 2 infos de depreciação; ver D48)
+- [x] `flutter test` → **25 testes, todos passando**
+- [x] `gradlew testDebugUnitTest` → **27 testes JVM, 0 falhas** (`WakeupPayloadParserTest` 11 + `RelayPolicyTest` 16)
+- [x] `gradlew assembleDebug` → **BUILD SUCCESSFUL** (`app-debug.apk`, 159,9 MB)
+- [x] Manifesto **mesclado** inspecionado: `FlutterFirebaseMessagingService` ausente (0 ocorrências), `BackgroundRelayService` com `foregroundServiceType` completo e `stopWithTask="false"`, `BootReceiver` com apenas `BOOT_COMPLETED`/`MY_PACKAGE_REPLACED`, todas as permissões presentes, `usesCleartextTraffic="true"` **apenas** no debug
+- [x] `git add -n app` → 47 arquivos rastreados; nenhum `build/`, `.gradle/`, `google-services.json` ou `local.properties`
+
+**Bugs conhecidos / limitações**
+
+- **Validação em aparelho não executada** (Fase 3.3): sem `adb`/emulador com Play Services e sem projeto Firebase local. Swipe-away, reboot e matriz de fabricantes ficam para a Fase 6.
+- Build local **sem FCM** quando `google-services.json` está ausente (esperado, ver D47).
+- `app-debug.apk` tem 145,5 MB porque é debug universal (3 ABIs). Release com `--split-per-abi` na Fase 6.
+- Warnings de toolchain **upstream**, não do projeto: `android.newDsl`/`android.builtInKotlin` depreciados no AGP 9 e plugins FlutterFire ainda aplicando KGP.
+- `Message.token` (backend) e `getToken()` (Dart) estão depreciados — ADR-007 pendente.
+
+**Próximo passo exato**
+
+> Incremento **iOS** da Fase 3 (`docs/TASKS.md` §3.2): `Info.plist` com
+> `UIBackgroundModes` (`audio`, `location`, `voip`, `remote-notification`, `fetch`) e
+> textos de `NSMicrophoneUsageDescription`/`NSLocationAlwaysAndWhenInUseUsageDescription`,
+> `AppDelegate` com PushKit `PKPushRegistry` + CallKit reporting, encaminhamento de
+> tokens FCM/VoIP ao Dart — **somente após aprovação explícita do usuário** e com
+> ADR-002 decidida antes do código.
+
+**Arquivos criados/alterados nesta entrada**
+
+```text
+.gitignore                                          (data/ -> /data/, /pgdata/)
+docs/ARCHITECTURE.md                                (§4.1, §10 R8/R9, §11 ADR-007)
+docs/TASKS.md                                       (Fase 3.1 concluída, 3.3 bloqueada por ambiente)
+docs/STATE_TRACEABILITY.md                          (esta entrada)
+app/                                                (scaffold Flutter, 47 arquivos rastreados)
+app/analysis_options.yaml                           (tipagem estrita)
+app/pubspec.yaml + pubspec.lock                     (firebase_core 5.1.0, firebase_messaging 17.0.1)
+app/lib/main.dart                                   (página de diagnóstico temporária)
+app/lib/features/background/background.dart          (barrel)
+app/lib/features/background/domain/platform_map.dart
+app/lib/features/background/domain/relay_models.dart
+app/lib/features/background/domain/background_event.dart
+app/lib/features/background/data/background_bridge.dart
+app/lib/features/background/data/push_messaging.dart
+app/lib/features/background/presentation/battery_optimization_prompt.dart
+app/test/features/background/background_bridge_test.dart
+app/test/features/background/background_event_test.dart
+app/android/app/build.gradle.kts                    (BOM, firebase-messaging, google-services condicional, proguard)
+app/android/app/proguard-rules.pro                  (keep rules, minificação desligada até a Fase 6)
+app/android/settings.gradle.kts                     (google-services 4.5.0 apply false)
+app/android/app/src/main/AndroidManifest.xml        (permissões, service, receiver, remove)
+app/android/app/src/debug/AndroidManifest.xml       (cleartext só em debug)
+app/android/app/src/main/res/values/strings.xml
+app/android/app/src/main/res/drawable/ic_stat_ptt.xml
+app/android/app/src/main/kotlin/com/geoptt/MainActivity.kt
+app/android/app/src/main/kotlin/com/geoptt/background/RelayContract.kt
+app/android/app/src/main/kotlin/com/geoptt/background/RelayPolicy.kt
+app/android/app/src/main/kotlin/com/geoptt/background/WakeupPayload.kt
+app/android/app/src/main/kotlin/com/geoptt/background/RelayPreferences.kt
+app/android/app/src/main/kotlin/com/geoptt/background/RelayController.kt
+app/android/app/src/main/kotlin/com/geoptt/background/RelayNotifications.kt
+app/android/app/src/main/kotlin/com/geoptt/background/BackgroundRelayService.kt
+app/android/app/src/main/kotlin/com/geoptt/background/BootReceiver.kt
+app/android/app/src/main/kotlin/com/geoptt/background/GeoPttMessagingService.kt
+app/android/app/src/main/kotlin/com/geoptt/background/BackgroundChannel.kt
+app/android/app/src/test/kotlin/com/geoptt/background/WakeupPayloadParserTest.kt
+app/android/app/src/test/kotlin/com/geoptt/background/RelayPolicyTest.kt
 ```
 
 ---

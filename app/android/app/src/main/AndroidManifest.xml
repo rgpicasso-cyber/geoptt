@@ -1,0 +1,141 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ============================ Rede ============================ -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- ===================== Localização (Life360) ================== -->
+    <!-- ACCESS_BACKGROUND_LOCATION é obrigatória para o rastreamento com o app
+         fechado e também é o que permite subir um FGS de localização a partir do
+         boot/background no Android 14+. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- ======================== Áudio (PTT) ========================= -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- ============ Resiliência: Foreground Service tipado ==========
+         Cada tipo usado por BackgroundRelayService precisa da permissão
+         correspondente (exigência do Android 14 / API 34). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- ========== CPU acordada, religar no boot, isenção de bateria ========== -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Permissão sensível na Play Store: uso justificado por PTT/rastreamento
+         contínuo. O pedido é gracioso e pode ser recusado (docs/ARCHITECTURE.md §10 R9). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- ============ Notificação persistente do canal PTT ============ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- O app funciona sem microfone (só escuta), mas não faz sentido sem ele. -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
+    <application
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:fullBackupContent="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ================= Relay (Fase 3) ================= -->
+        <!--
+            foregroundServiceType declara o SUPERCONJUNTO. Em runtime o serviço sobe
+            com o maior subconjunto autorizado (ver BackgroundRelayService.typeLadder):
+            o Android 14 recusa "microphone" quando o serviço nasce em background.
+            stopWithTask=false é o que impede o swipe-away de matar o relay.
+        -->
+        <service
+            android:name=".background.BackgroundRelayService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="microphone|location|mediaPlayback" />
+
+        <!-- Religa o relay após reboot/atualização, somente se o usuário ativou.
+             Apenas broadcasts PROTEGIDOS do sistema: QUICKBOOT_POWERON (Xiaomi/HTC) ficou
+             de fora porque qualquer app poderia enviá-lo explicitamente a este receiver
+             exportado e forçar um start de FGS. Ver docs/ARCHITECTURE.md §4.1. -->
+        <receiver
+            android:name=".background.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            Substitui o serviço do FlutterFire (que é no-op em firebase_messaging 17):
+            assim o wake-up é tratado nativamente ANTES de qualquer isolate Dart.
+            A entrega ao Dart continua pelo FlutterFirebaseMessagingReceiver do plugin.
+            O `remove` é obrigatório: dois serviços com MESSAGING_EVENT tornariam a
+            entrega indefinida. Ver docs/ARCHITECTURE.md §4.1 e §10 (R8).
+        -->
+        <service
+            android:name=".background.GeoPttMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService"
+            tools:node="remove" />
+
+        <!-- Ícone padrão de notificações (fallback para mensagens de notificação). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_ptt" />
+
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+</manifest>

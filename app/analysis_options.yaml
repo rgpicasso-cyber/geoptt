@@ -1,0 +1,28 @@
+# Regras de análise do GeoPTT.
+#
+# Tipagem estrita é requisito de projeto (`.opencode/rules.md` §3): nenhum `dynamic`
+# em contrato de rede/plataforma. `strict-casts` transforma cast implícito em erro,
+# `strict-inference` impede tipo inferido como `dynamic` e `strict-raw-types` proíbe
+# genéricos sem parâmetro (`Map` em vez de `Map<String, Object?>`).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - avoid_print
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
+    - use_super_parameters

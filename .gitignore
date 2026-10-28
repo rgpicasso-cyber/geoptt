@@ -157,8 +157,10 @@ android/.idea/
 *.db-wal
 *.db-shm
 db.sqlite3
-data/
-pgdata/
+# Ancorado na raiz: `data/` sem barra inicial ignoraria também as pastas `data/`
+# das features do Flutter (ex.: app/lib/features/background/data/).
+/data/
+/pgdata/
 dump.sql
 *.dump
 backups/

@@ -179,6 +179,122 @@ lista de recentes**.
   notificação visível quando o sistema bloquear o despertar silencioso. Risco de
   rejeição na App Store está registrado em §10.
 
+### 4.1 Contrato nativo Android (Fase 3)
+
+O despertar é implementado na camada nativa, **fora** do isolate principal do Flutter,
+para funcionar com a UI destruída. O pacote `com.geoptt.background`
+(`app/android/app/src/main/kotlin/com/geoptt/background/`) concentra apenas ciclo de
+vida do SO — nenhuma regra de negócio, nenhuma chamada de rede.
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `BackgroundRelayService` | Foreground Service persistente ("Canal PTT Ativo"), `START_STICKY`, WakeLock parcial renovável, negociação de `foregroundServiceType` |
+| `GeoPttMessagingService` | Recebe a Data Message **no nível nativo**, valida o payload, adquire WakeLock e sobe o relay antes de repassar ao FlutterFire |
+| `BootReceiver` | Religa o relay após `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` **se** o usuário havia ativado o modo PTT |
+| `RelayNotifications` | Canal `geoptt_relay` (importância `LOW`, sem som), notificação *ongoing* com ação "Desligar" |
+| `RelayController` | Estado em processo (`running`, wake-up pendente) e ponte de eventos para o Dart |
+| `WakeupPayload` | Parser puro do payload FCM com descarte de mensagem obsoleta |
+| `BackgroundChannel` | `MethodChannel`/`EventChannel` tipados expostos ao Dart |
+
+**Payload aceito** — idêntico ao produzido por `FcmService.build_message` no backend:
+
+```json
+{ "type": "PTT_WAKEUP", "v": "1", "channel_id": "<uuid>", "sender_id": "<uuid>",
+  "call_id": "<uuid>", "ts": "1730000000" }
+```
+
+`ts` com desvio maior que **300 s** é descartado: com `ttl=0` o áudio é perecível, e
+acordar para um PTT de 10 minutos atrás só consome bateria.
+
+**Contrato `MethodChannel("geoptt/background")`**
+
+| Método | Retorno | Efeito |
+|---|---|---|
+| `startRelay` | `{started, foregroundTypes, notificationPermission}` | Sobe o FGS, persiste `relay_enabled=true`, pede `POST_NOTIFICATIONS` se necessário |
+| `stopRelay` | `{stopped}` | Para o FGS, persiste `relay_enabled=false`, libera WakeLock |
+| `getStatus` | `{running, enabled, ignoringBatteryOptimizations, sdkInt, manufacturer}` | Diagnóstico para a UI |
+| `isIgnoringBatteryOptimizations` | `bool` | Checagem pura (sem efeito colateral) |
+| `requestIgnoreBatteryOptimizations` | `{requested, alreadyGranted}` | Intent `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`; fallback para a tela de configurações |
+| `requestNotificationPermission` | `{status}` | `granted` \| `denied` \| `requested` (Android 13+) |
+| `openNotificationSettings` | `void` | Atalho para as configurações de notificação do app |
+| `consumePendingWakeup` | `Map?` | Drena o último wake-up recebido com a UI morta |
+
+**Contrato `EventChannel("geoptt/background/events")`** — eventos `wakeup`,
+`relayStarted`, `relayStopped`, `relayStartDenied`, `batteryExemptionChanged`,
+`notificationPermission`. Erros usam códigos estáveis (`RELAY_START_DENIED`,
+`SERVICE_UNAVAILABLE`, `ACTIVITY_DETACHED`).
+
+**`foregroundServiceType` é negociado, não fixo.** O manifest declara o superconjunto
+`microphone|location|mediaPlayback`, mas o serviço sobe com o maior subconjunto que o
+SO autorizar, em cascata. A escada depende da **origem** do start (regra pura em
+`RelayPolicy.typeLadder`):
+
+| Origem | API < 29 | API 29–34 | API ≥ 35 |
+|---|---|---|---|
+| `ui` | `0` | `location\|mediaPlayback` → `mediaPlayback` | `microphone\|location\|mediaPlayback` → `location\|mediaPlayback` → `mediaPlayback` |
+| `fcm` / `restart` | `0` | `location\|mediaPlayback` → `mediaPlayback` → completo | idem (o completo raramente é aceito) |
+| `boot` | `0` | `location\|mediaPlayback` → `location` → `mediaPlayback` | **`location` apenas** |
+
+Motivo: `SecurityException` / `ForegroundServiceStartNotAllowedException` em
+`startForeground` **derrubam o processo** se não forem tratadas. Receber o áudio é mais
+importante do que falar; falar com a UI fechada exige isenção de bateria e microfone
+concedidos.
+
+Duas regras adicionais que a cascata sozinha não cobre:
+
+- **Android 15+ proíbe `mediaPlayback`, `microphone`, `dataSync`, `camera`, `phoneCall` e
+  `mediaProjection` a partir de `BOOT_COMPLETED`.** Por isso a escada de boot vira só
+  `location` na API 35; qualquer outra tentativa lançaria
+  `ForegroundServiceStartNotAllowedException` e o relay nunca voltaria após o reboot.
+- **Reentrada não renegocia tipos.** `startForeground` *substitui* o conjunto concedido:
+  reexecutar a escada a cada wake-up de FCM rebaixaria um relay já em `microphone` para
+  `location|mediaPlayback` e o usuário perderia a fala sem ver erro. Com o serviço já em
+  foreground o start apenas renova o WakeLock; upgrade só é tentado quando a origem é
+  `ui` (app comprovadamente em foreground) e apenas se conceder mais do que já se tem.
+
+**WakeLock:** `PARTIAL_WAKE_LOCK` com `acquire(timeout)` de 10 min, renovado a cada
+wake-up/evento de PTT e liberado em `onDestroy`. Nunca `acquire()` sem timeout —
+bateria drenada é bug de produto. O handler de FCM usa um lock curto e separado
+(15 s), que só cobre o intervalo entre o broadcast e o `onCreate` do serviço.
+
+**FCM:** o serviço do FlutterFire
+(`io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService`) é removido do
+manifest (`tools:node="remove"`) e substituído por `GeoPttMessagingService`, que
+**herda** dele e chama `super.onMessageReceived` ao final — assim o isolate de
+background do Dart continua recebendo a mensagem. O acoplamento com a classe interna do
+plugin é risco rastreado em §10 (R8) e exige revalidação a cada upgrade de
+`firebase_messaging`.
+
+A entrega ao Dart **não** depende desse serviço: em `firebase_messaging` 17 o caminho é
+`FlutterFirebaseMessagingReceiver` → `FlutterFirebaseMessagingBackgroundService`. O
+`super.onMessageReceived` é no-op hoje, mas `onNewToken`/`onRegistered` do plugin vivem na
+mesma classe — chamar `super` é o que mantém o stream de token do Dart vivo. Existem dois
+serviços com `MESSAGING_EVENT` no manifesto final (o nosso, prioridade implícita `0`, e o
+`com.google.firebase.messaging.FirebaseMessagingService` do AAR, prioridade `-500`): é o
+mecanismo documentado do Firebase para o app sobrescrever o handler, não um conflito.
+
+**Gradle:** `com.google.firebase:firebase-messaging` **precisa** ser declarado no
+`app/build.gradle.kts` (sem versão, sob um `platform("com.google.firebase:firebase-bom:…")`).
+As dependências `implementation` de um subprojeto de plugin **não** vazam para o classpath
+de compilação do `:app`, então sem essa linha `FirebaseMessagingService`/`RemoteMessage`
+não existem em tempo de compilação. A versão do BOM é lida de `FirebaseSDKVersion`
+(propriedade publicada pelo `firebase_core`), evitando drift em upgrade do FlutterFire.
+
+**Consentimento (`relay_enabled`):** `relay_enabled=true` persistido em
+`SharedPreferences` (`geoptt_relay_prefs`) é a **única** autorização para o relay existir
+sem a UI. Vale igualmente para o boot e para o wake-up por FCM: religar sem intenção do
+usuário seria transmissão de localização sem consentimento. Quando o canal está
+desligado, o Data Message ainda é **publicado** em `RelayController` (para a UI registrar
+"chamada perdida" se estiver viva), mas **não** sobe o Foreground Service.
+
+O `BootReceiver` aceita apenas broadcasts **protegidos** do sistema (`BOOT_COMPLETED`,
+`MY_PACKAGE_REPLACED`). `QUICKBOOT_POWERON` (Xiaomi/HTC) ficou de fora de propósito: não é
+protegido, então qualquer app poderia enviá-lo explicitamente a um receiver exportado e
+forçar um start de FGS.
+
+**Testes:** a política acima é código puro (`RelayPolicy`) com `sdkInt` injetado, coberta
+em JVM (`RelayPolicyTest`, 16 casos) — não exige emulador para validar API 28→36.
+
 ---
 
 ## 5. Fluxo de Áudio PTT (half-duplex)
@@ -407,6 +523,9 @@ Sem `Upgrade`/`Connection`, o handshake falha com `400` e o app nunca conecta.
 | R5 | Áudio sobre WS sofre em 3G instável | fala picotada | Opus 16–24 kbps, jitter buffer, descarte de frames antigos |
 | R6 | Vazamento de chave SSH / SA JSON | comprometimento total | `.gitignore` + regra §9 + rotação imediata |
 | R7 | PostGIS ausente no início (SQLite) | queries geo diferentes | abstrair em `GeoRepository`; Haversine no SQLite, PostGIS em prod |
+| R8 | `GeoPttMessagingService` herda `FlutterFirebaseMessagingService` (classe interna do plugin) | quebra silenciosa ao subir `firebase_messaging` | versão pinada no `pubspec.lock`; revalidar `onMessageReceived` a cada upgrade; teste manual de wake-up no checklist de release |
+| R9 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` é permissão sensível na Play Store | rejeição de publicação | uso justificado (PTT/rastreamento contínuo) declarado na ficha da loja; pedido **gracioso**, com tela explicativa e opção "agora não" |
+| R10 | Android 15+ proíbe FGS de `mediaPlayback`/`microphone` a partir de `BOOT_COMPLETED`, e versões futuras podem restringir mais tipos | relay não volta após reboot | `RelayPolicy.typeLadder` isola a regra em código puro e testado por `sdkInt`; boot cai para `location` na API ≥ 35; revalidar a cada nova API no checklist de release |
 
 ---
 
@@ -420,6 +539,7 @@ Sem `Upgrade`/`Connection`, o handshake falha com `400` e o app nunca conecta.
 | ADR-004 | Armazenamento de áudio: só streaming ou gravação opcional | 5 |
 | ADR-005 | Multi-tenant de círculos vs instância única por organização | 4 |
 | ~~ADR-006~~ | ~~`passlib` vs `pwdlib`~~ → **decidido**: `pwdlib` + Argon2id (`docs/adr/ADR-006-pwdlib-argon2id.md`) | 2 ✅ |
+| ADR-007 | Token de registro FCM vs **FID**: `firebase_messaging` 17 deprecia `getToken()`/`onTokenRefresh` em favor de `register()`/`onRegistered`, e o `firebase-admin` 7.7 deprecia `Message.token` em favor de `Message.fid`. Migrar exige mudar cliente **e** servidor juntos (coluna `users.fcm_token` → FID + `Message.fid`) | 6 |
 
 ---
 

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GeoPTT</string>
+
+    <!-- Notificação persistente do Foreground Service (Fase 3). -->
+    <string name="relay_channel_name">Canal PTT</string>
+    <string name="relay_channel_description">Mantém o canal de voz PTT ativo em segundo plano.</string>
+    <string name="relay_notification_title">Canal PTT ativo</string>
+    <string name="relay_notification_text">Pronto para receber voz e compartilhar localização</string>
+    <string name="relay_notification_stop">Desligar</string>
+</resources>

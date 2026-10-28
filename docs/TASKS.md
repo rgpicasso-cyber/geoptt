@@ -4,7 +4,7 @@
 > **aprovada explicitamente pelo usuário**. Cada fase termina com docs atualizados e
 > entrada em `docs/STATE_TRACEABILITY.md`.
 >
-> Última atualização: 2026-10-28 · Fase atual: **2 concluída — aguardando aprovação para a 3**
+> Última atualização: 2026-10-28 · Fase atual: **3 em andamento — Android concluído, iOS pendente**
 >
 > Legenda: `[X]` concluído e verificado · `[~]` parcial · `[ ]` pendente
 
@@ -16,7 +16,7 @@
 |:---:|---|:---:|---|
 | **1** | Setup, `.gitignore`, regras, arquitetura, modelo de dados, rastreabilidade | ✅ `[X]` | tudo |
 | **2** | Backend FastAPI: Auth, Database, FCM, WebSocket Hub | ✅ `[X]` | 3, 4, 5, 6 |
-| **3** | Configuração nativa Android/iOS: permissões e background services | ⬜ `[ ]` | 4, 5 |
+| **3** | Configuração nativa Android/iOS: permissões e background services | 🟡 `[~]` | 4, 5 |
 | **4** | Frontend Flutter: GIS Tracker + OpenStreetMap | ⬜ `[ ]` | 6 |
 | **5** | Frontend Flutter: PTT Audio Engine (Opus) | ⬜ `[ ]` | 6 |
 | **6** | Deploy na VPS `163.176.229.20` + testes integrados | ⬜ `[ ]` | release |
@@ -178,19 +178,29 @@ real acontece na VPS (Fase 6).
 
 ### 3.1 Android
 
-- [ ] `AndroidManifest.xml`: `INTERNET`, `ACCESS_FINE_LOCATION`,
+- [X] `AndroidManifest.xml`: `INTERNET`, `ACCESS_FINE_LOCATION`,
       `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`,
       `FOREGROUND_SERVICE_LOCATION`, `FOREGROUND_SERVICE_MICROPHONE`,
       `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`,
       `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `POST_NOTIFICATIONS`.
-- [ ] `BackgroundRelayService` (Kotlin) com `foregroundServiceType` explícito,
+- [X] `BackgroundRelayService` (Kotlin) com `foregroundServiceType` explícito,
       notificação persistente e `START_STICKY`.
-- [ ] `BootReceiver` para religar o serviço após reboot.
-- [ ] Canal de notificação dedicado (`geoptt_relay`, importância `LOW`).
-- [ ] Handler `_firebaseMessagingBackgroundHandler` com
-      `@pragma('vm:entry-point')` **fora de classe**.
-- [ ] Fluxo gracioso de isenção de bateria (tela explicativa + intent).
-- [ ] `MethodChannel` `geoptt/background`: `startRelay`, `stopRelay`, `isRelayRunning`.
+- [X] `BootReceiver` para religar o serviço após reboot. *(Android 15+: só com o tipo
+      `location`, por restrição do SO a FGS a partir de `BOOT_COMPLETED`.)*
+- [X] Canal de notificação dedicado (`geoptt_relay`, importância `LOW`).
+- [X] Handler `firebaseMessagingBackgroundHandler` com
+      `@pragma('vm:entry-point')` **fora de classe**, registrado em `main()` antes do
+      `runApp`.
+- [X] Fluxo gracioso de isenção de bateria (tela explicativa + intent).
+- [X] `MethodChannel` `geoptt/background`: `startRelay`, `stopRelay`, `getStatus`,
+      `consumePendingWakeup`, `isIgnoringBatteryOptimizations`,
+      `requestIgnoreBatteryOptimizations`, `requestNotificationPermission`,
+      `openNotificationSettings` + `EventChannel` `geoptt/background/events`.
+- [X] `GeoPttMessagingService` (FCM **nativo**): parseia o payload, adquire WakeLock
+      curto e sobe o relay com a UI morta; substitui o serviço do FlutterFire via
+      `tools:node="remove"` (`docs/ARCHITECTURE.md` §4.1).
+- [X] Testes: JVM do parser de payload + `RelayPolicy` (27 casos) + Dart do bridge e
+      dos eventos (25 casos), `flutter analyze` sem issues.
 
 ### 3.2 iOS
 
@@ -203,6 +213,11 @@ real acontece na VPS (Fase 6).
 - [ ] Habilitar *Background Modes* e *Push Notifications* no Xcode/capabilities.
 
 ### 3.3 Validação
+
+> **Bloqueio de ambiente:** os três itens abaixo exigem aparelho físico. O ambiente de
+> desenvolvimento atual não tem `adb`/emulador com Play Services nem projeto Firebase
+> (`google-services.json` é gitignored), então a evidência de wake-up real fica para a
+> Fase 6, junto do deploy.
 
 - [ ] Teste manual: swipe-away → PTT do outro usuário → app desperta e recebe áudio.
 - [ ] Teste manual: reboot do aparelho → serviço religa.
@@ -217,8 +232,8 @@ wake-up após swipe-away em pelo menos 1 Android e 1 iOS.
 
 **Objetivo:** mapa funcional com posições do círculo em tempo real.
 
-- [ ] Scaffold `app/` + `analysis_options.yaml` com `strict-casts`,
-      `strict-inference`, `strict-raw-types`.
+- [X] Scaffold `app/` + `analysis_options.yaml` com `strict-casts`,
+      `strict-inference`, `strict-raw-types`. *(antecipado na Fase 3)*
 - [ ] `core/` : Dio client, `WsClient` (backoff exponencial + jitter, heartbeat),
       `SecureStorage` (tokens), router, tema.
 - [ ] Feature `auth`: login, refresh automático, logout.
