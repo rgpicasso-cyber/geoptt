@@ -261,6 +261,56 @@ Todo frame **textual** usa o mesmo envelope; frames **binários** são exclusiva
 Versionamento: campo `v` no envelope. Mudança incompatível → `v: 2` + período de
 coexistência. Contrato HTTP versionado em `docs/openapi.yaml` (Fase 2).
 
+### 7.1 Contrato REST (HTTP)
+
+Prefixo global `API_PREFIX` (padrão `/api/v1`). Health probes ficam na **raiz**
+(`/health`, `/health/ready`) para não dependerem do prefixo de versão.
+
+| Método | Rota | Auth | Descrição |
+|---|---|---|---|
+| `POST` | `/auth/register` | — | cria conta e devolve par de tokens |
+| `POST` | `/auth/login` | — | OAuth2 password flow (form) → tokens |
+| `POST` | `/auth/refresh` | refresh no corpo | rotaciona o par e revoga o anterior |
+| `POST` | `/auth/logout` | Bearer | revoga o refresh do dispositivo |
+| `GET` | `/users/me` | Bearer | perfil do usuário autenticado |
+| `PATCH` | `/users/me` | Bearer | `display_name`, `is_sharing_location` |
+| `POST` | `/users/me/fcm-token` | Bearer | registra token + plataforma (idempotente) |
+| `DELETE` | `/users/me/fcm-token` | Bearer | remove o token do dispositivo |
+| `POST` | `/circles` | Bearer | cria círculo + membership `owner` + canal PTT `Geral` |
+| `POST` | `/circles/join` | Bearer | entra por `invite_code` |
+| `GET` | `/circles` | Bearer | círculos do usuário |
+| `GET` | `/circles/{id}/members` | Bearer + membro | membros com última posição e bateria |
+| `DELETE` | `/circles/{id}/members/{user_id}` | Bearer + owner/admin | remove membro |
+| `POST` | `/location/batch` | Bearer | até 50 pontos, idempotente por `client_seq` |
+| `GET` | `/location/circle/{id}` | Bearer + membro | snapshot de posições para o mapa |
+
+**Envelope de erro** (todas as rotas, inclusive 422 do Pydantic):
+
+```json
+{ "error": { "code": "EMAIL_TAKEN", "message": "e-mail já cadastrado" } }
+```
+
+| Status | `code` típico | Quando |
+|---|---|---|
+| 400 | `BAD_REQUEST` | regra de negócio violada (ex.: remover o owner) |
+| 401 | `UNAUTHORIZED` | token ausente, inválido, expirado ou de tipo errado |
+| 403 | `NOT_A_MEMBER` / `FORBIDDEN` | autenticado, mas sem acesso ao recurso |
+| 404 | `NOT_FOUND` | recurso inexistente (ou invisível ao solicitante) |
+| 409 | `EMAIL_TAKEN` / `ALREADY_MEMBER` | conflito de estado |
+| 422 | `VALIDATION_ERROR` | payload inválido (Pydantic) |
+| 429 | `RATE_LIMITED` | limite de 5 req/min/IP em `register` e `login` |
+
+**Regras transversais**
+
+- Senhas: Argon2id via `pwdlib`; política de 8–128 caracteres, exigindo letra e
+  dígito. Hash nunca sai do banco nem aparece em log.
+- Refresh token: guardado apenas como SHA-256; rotação a cada uso; reutilização de
+  token já revogado revoga **todas** as sessões do usuário (detecção de roubo).
+- `404` é usado também quando o recurso existe mas o solicitante não é membro,
+  para não vazar a existência de círculos alheios.
+- `POST /location/batch` é idempotente: reenvio da fila offline não duplica
+  histórico (`ON CONFLICT DO NOTHING` em `(user_id, client_seq)`).
+
 ---
 
 ## 8. Segurança
@@ -368,6 +418,7 @@ Sem `Upgrade`/`Connection`, o handshake falha com `400` e o app nunca conecta.
 | ADR-003 | Retenção e anonimização do `location_history` (LGPD) | 2 |
 | ADR-004 | Armazenamento de áudio: só streaming ou gravação opcional | 5 |
 | ADR-005 | Multi-tenant de círculos vs instância única por organização | 4 |
+| ~~ADR-006~~ | ~~`passlib` vs `pwdlib`~~ → **decidido**: `pwdlib` + Argon2id (`docs/adr/ADR-006-pwdlib-argon2id.md`) | 2 ✅ |
 
 ---
 

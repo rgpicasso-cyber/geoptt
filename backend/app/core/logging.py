@@ -105,6 +105,3 @@ def configure_logging(settings: Settings) -> None:
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("websockets").setLevel(logging.WARNING)
     logging.getLogger("firebase_admin").setLevel(logging.WARNING)
-    # passlib 1.7.4 não lê `bcrypt.__about__` (removido no bcrypt 4.1+) e loga um
-    # WARNING inofensivo na primeira utilização. O hash funciona; ver #003.
-    logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)

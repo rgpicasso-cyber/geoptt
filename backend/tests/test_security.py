@@ -11,7 +11,7 @@ import pytest
 from app.core.config import Settings
 from app.core.logging import RedactionFilter, redact
 from app.core.security import (
-    BCRYPT_MAX_PASSWORD_BYTES,
+    MAX_PASSWORD_BYTES,
     TokenError,
     TokenType,
     create_access_token,
@@ -20,6 +20,8 @@ from app.core.security import (
     generate_opaque_token,
     hash_password,
     hash_token,
+    validate_password_policy,
+    verify_and_upgrade,
     verify_password,
 )
 
@@ -30,7 +32,8 @@ def test_password_roundtrip() -> None:
     hashed = hash_password(password)
 
     assert hashed != password
-    assert hashed.startswith("$2")
+    # ADR-006: Argon2id, não mais bcrypt.
+    assert hashed.startswith("$argon2id$")
     assert verify_password(password, hashed) is True
     assert verify_password("senha-errada", hashed) is False
 
@@ -40,21 +43,51 @@ def test_password_hash_is_salted() -> None:
     assert hash_password(password) != hash_password(password)
 
 
-def test_password_rejects_more_than_72_bytes() -> None:
-    too_long = "a" * (BCRYPT_MAX_PASSWORD_BYTES + 1)
-    with pytest.raises(ValueError, match="72"):
+def test_password_rejects_more_than_max_bytes() -> None:
+    too_long = "a" * (MAX_PASSWORD_BYTES + 1)
+    with pytest.raises(ValueError, match=str(MAX_PASSWORD_BYTES)):
         hash_password(too_long)
 
 
 def test_password_at_exact_limit_is_accepted() -> None:
-    assert verify_password(
-        "a" * BCRYPT_MAX_PASSWORD_BYTES,
-        hash_password("a" * BCRYPT_MAX_PASSWORD_BYTES),
-    )
+    boundary = "a" * MAX_PASSWORD_BYTES
+    assert verify_password(boundary, hash_password(boundary))
 
 
 def test_verify_password_with_corrupt_hash_returns_false() -> None:
-    assert verify_password("qualquer", "nao-e-um-hash-bcrypt") is False
+    assert verify_password("qualquer", "nao-e-um-hash-argon2") is False
+
+
+@pytest.mark.parametrize(
+    "password, fragment",
+    [
+        ("curta1", "8 caracteres"),
+        ("semnumero", "dígito"),
+        ("12345678", "letra"),
+    ],
+)
+def test_password_policy_rejects_weak_passwords(password: str, fragment: str) -> None:
+    with pytest.raises(ValueError, match=fragment):
+        validate_password_policy(password)
+
+
+def test_password_policy_accepts_strong_password() -> None:
+    validate_password_policy("Senha-forte-123")
+
+
+def test_verify_and_upgrade_keeps_current_hash() -> None:
+    """Sem mudança de parâmetros, não há re-hash (evita write em todo login)."""
+    hashed = hash_password("Senha-forte-123")
+    valid, new_hash = verify_and_upgrade("Senha-forte-123", hashed)
+    assert valid is True
+    assert new_hash is None
+
+
+def test_verify_and_upgrade_returns_none_for_wrong_password() -> None:
+    hashed = hash_password("Senha-forte-123")
+    valid, new_hash = verify_and_upgrade("errada-123", hashed)
+    assert valid is False
+    assert new_hash is None
 
 
 # --------------------------------------------------------------------------- token hash

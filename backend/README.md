@@ -100,7 +100,45 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | `GET /health` | Liveness — não toca no banco |
 | `GET /health/ready` | Readiness — banco + FCM + estatísticas de WebSocket |
 | `GET /docs` | Swagger UI (desabilitado em `ENV=production`) |
+| `GET /api/v1/...` | REST versionado (auth, usuários, círculos, localização) |
 | `WS /ws` | Socket principal do app |
+
+O contrato REST completo e versionado está em **`docs/openapi.yaml`** (14 rotas).
+Ele é gerado a partir do app — nunca editado à mão:
+
+```bash
+python tools/export_openapi.py
+```
+
+`tests/test_openapi_contract.py` falha se o arquivo commitado divergir do código.
+
+### REST — resumo das rotas
+
+| Método | Rota | Observação |
+|---|---|---|
+| `POST` | `/api/v1/auth/register` | JSON + header `X-Device-Id` |
+| `POST` | `/api/v1/auth/login` | form-urlencoded (`username` = e-mail) + `X-Device-Id` |
+| `POST` | `/api/v1/auth/refresh` | JSON; rotaciona e revoga o token usado |
+| `POST` | `/api/v1/auth/logout` | JSON; revoga o device (ou todas as sessões) |
+| `GET` `PATCH` | `/api/v1/users/me` | perfil público (nunca expõe hash nem FCM) |
+| `POST` `DELETE` | `/api/v1/users/me/fcm-token` | registro idempotente do token de push |
+| `POST` | `/api/v1/circles` | cria círculo + membership `owner` + canal PTT padrão |
+| `POST` | `/api/v1/circles/join` | por `invite_code` (case-insensitive) |
+| `GET` | `/api/v1/circles` | círculos do usuário, com papel e contagem |
+| `GET` | `/api/v1/circles/{id}/members` | membros com última posição e bateria |
+| `DELETE` | `/api/v1/circles/{id}/members/{user_id}` | owner/admin |
+| `POST` | `/api/v1/location/batch` | até 50 pontos, idempotente por `client_seq` |
+| `GET` | `/api/v1/location/circle/{id}` | snapshot para o mapa |
+
+Erros seguem um envelope único:
+
+```json
+{ "error": { "code": "EMAIL_TAKEN", "message": "e-mail já cadastrado" } }
+```
+
+Círculo do qual o solicitante **não** é membro responde **404** (não 403), para não
+confirmar a existência do ID. `403 FORBIDDEN` fica para quem é membro mas não tem o
+papel exigido.
 
 ---
 
@@ -169,19 +207,26 @@ backend/
 │   ├── core/
 │   │   ├── config.py               # Settings (pydantic-settings)
 │   │   ├── container.py            # Services (app.state)
+│   │   ├── errors.py               # AppError + handlers (envelope único)
 │   │   ├── logging.py              # JSON + redação de segredos
-│   │   └── security.py             # bcrypt + JWT
+│   │   ├── rate_limit.py           # SlidingWindowLimiter (login/registro)
+│   │   └── security.py             # Argon2id (pwdlib) + JWT
 │   ├── db/
 │   │   ├── base.py                 # Base + naming convention
 │   │   └── session.py              # Database (engine async)
 │   ├── models/                     # ORM (users, circles, locations, ptt...)
-│   ├── repositories/               # acesso a dados
-│   ├── schemas/ws.py               # envelope do protocolo
+│   ├── repositories/               # Protocols + implementações (PostGIS)
+│   ├── schemas/                    # Pydantic v2 (auth, users, circles, location, errors)
 │   ├── services/
+│   │   ├── auth_service.py         # registro/login/rotação de refresh
+│   │   ├── circle_service.py       # convites, papéis, canal PTT padrão
 │   │   ├── connection_manager.py   # presença + writer com backpressure
 │   │   ├── fcm_service.py          # wake-up Data Message
-│   │   └── ptt_service.py          # half-duplex por canal
+│   │   ├── location_service.py     # lote idempotente + snapshot + broadcast
+│   │   ├── ptt_service.py          # half-duplex por canal
+│   │   └── user_service.py         # perfil + token FCM
 │   └── main.py                     # application factory + lifespan
+├── tools/export_openapi.py         # gera docs/openapi.yaml
 └── tests/
 ```
 
@@ -190,7 +235,8 @@ backend/
 ## Segurança — regras não negociáveis
 
 - `.env`, `serviceAccountKey.json` e `*.key` **nunca** são versionados.
-- Senhas: bcrypt. Refresh tokens: armazenados apenas como SHA-256.
+- Senhas: **Argon2id** (`pwdlib`, ADR-006). Refresh tokens: armazenados apenas como
+  SHA-256. Nenhum token em claro no banco.
 - Logs passam por `RedactionFilter` (JWT, `token=`, senhas e coordenadas
   com 5+ casas decimais são mascarados).
 - `JWT_SECRET` em `SecretStr` — não aparece em `repr()` nem em tracebacks.
@@ -201,7 +247,7 @@ backend/
 
 | Problema | Impacto | Mitigação |
 |---|---|---|
-| `passlib` 1.7.4 sem manutenção | Aviso de versão do `bcrypt` no startup | Migração para `pwdlib` avaliada em ADR futura |
 | Estado de canal PTT em memória | Não escala horizontalmente | MVP single-node; Redis/ADR-001 antes de escalar |
 | `FCM` no iOS pode atrasar background push | Wake-up não garantido | PushKit/VoIP avaliado em ADR-002 (Fase 3) |
 | Sem Docker/psql no ambiente de dev atual | Migration não executada localmente | Validar no VPS (`163.176.229.20`) ou ambiente do usuário |
+| `Message.token` deprecado (firebase-admin 7.7) | Aviso no `pytest` | Migrar para `fid` após validar contra a API real do FCM |

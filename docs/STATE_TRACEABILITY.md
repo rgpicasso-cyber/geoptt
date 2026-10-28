@@ -361,6 +361,170 @@ docs/STATE_TRACEABILITY.md       (alterado — snapshot + esta entrada)
 
 ---
 
+### 2026-10-28 — Entrada #004 — Fase 2 concluída: REST completo, OpenAPI versionado e `pwdlib`/Argon2id
+
+**Contexto:** fechar definitivamente o escopo da Fase 2. A entrada #003 deixou o
+esqueleto do backend (config, modelos, migration, hub WebSocket, FCM) com 100 testes,
+mas sem os endpoints REST, sem 4 dos 5 repositories e com a dívida do `passlib`
+registrada em "Bugs conhecidos". Esta entrada resolve os três pontos de uma vez.
+
+**O que foi feito**
+
+1. **Troca de algoritmo de hash (ADR-006).** `passlib` 1.7.4 + `bcrypt<5` foram
+   removidos de `pyproject.toml`. Entrou `pwdlib[argon2]` 0.3.1 com
+   `PasswordHash.recommended()` → **Argon2id**. O pin de teto `bcrypt<5` deixou de
+   existir porque não há mais dependência de `bcrypt`.
+2. **`app/core/security.py`** — `MAX_PASSWORD_BYTES = 128` (limite de **política**,
+   não do algoritmo), `MIN_PASSWORD_LENGTH = 8`, política exigindo ≥ 1 letra e ≥ 1
+   dígito. `verify_password` e `verify_and_upgrade` capturam
+   `pwdlib.exceptions.PwdlibError` (não `ValueError`) — hash de outro algoritmo,
+   truncado ou vazio resulta em "não confere", nunca em 500.
+3. **`app/core/rate_limit.py`** — `SlidingWindowLimiter` (janela deslizante em
+   memória, sem Redis) com `AUTH_RATE_LIMIT_PER_MINUTE = 5`.
+4. **`app/core/errors.py`** — hierarquia `AppError` → `BadRequestError`,
+   `UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `ConflictError`,
+   `UnprocessableError`, `RateLimitedError` + `register_error_handlers()`. Envelope
+   único `{"error": {"code", "message"}}`; o 422 **nunca** ecoa o valor recebido
+   (payloads de `/auth/*` carregam senha em claro).
+5. **`app/repositories/`** — `protocols.py` com views (`CircleSummary`, `MemberView`,
+   `PositionView`, `LocationPointInput`) e 5 `Protocol`s (`User`, `Token`, `Circle`,
+   `Location`, `PttChannel`); implementações reais em `user_repository.py`,
+   `token_repository.py`, `circle_repository.py`, `location_repository.py`
+   (PostGIS/`ST_MakePoint`) e `ptt_channel_repository.py`. `results.py` centraliza o
+   cast `Result` → `CursorResult` (`affected_rows`).
+6. **`app/schemas/`** — `auth.py`, `users.py`, `circles.py`, `location.py`,
+   `errors.py` (envelope + constantes `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`,
+   `CONFLICT`, `VALIDATION`, `RATE_LIMITED` para `responses=`).
+7. **`app/services/`** — `auth_service.py` (registro, login, rotação de refresh com
+   detecção de reuso, logout por device), `user_service.py` (perfil + token FCM),
+   `circle_service.py` (criação com canal PTT padrão, convite por código sem
+   caracteres ambíguos, remoção com papéis), `location_service.py` (ingestão de lote
+   idempotente, snapshot do mapa, broadcast do ponto fresco) e a fábrica
+   `build_location_service(session, *, manager)`.
+8. **`app/api/deps.py` + routers** — transação por requisição (`get_session` faz
+   `commit`/`rollback`), providers de repositório/serviço, `get_current_user`,
+   `auth_rate_limit`, `client_ip`. Rotas: `POST /auth/register|login|refresh|logout`,
+   `GET|PATCH /users/me`, `POST|DELETE /users/me/fcm-token`, `POST /circles`,
+   `POST /circles/join`, `GET /circles`, `GET /circles/{id}/members`,
+   `DELETE /circles/{id}/members/{user_id}`, `POST /location/batch`,
+   `GET /location/circle/{id}`. Tudo sob `API_PREFIX` (padrão `/api/v1`); `/health` e
+   `/health/ready` continuam na raiz.
+9. **`app/api/ws/ptt.py`** — `LOCATION_BATCH` implementado: valida com
+   `LocationBatchRequest`, abre **sessão curta própria** e faz `commit()` explícito,
+   porque o socket vive muito além de qualquer transação HTTP. Sucesso é silencioso
+   (sem ACK, para não gerar um frame por lote); falha devolve `ERROR` e o cliente
+   reenfileira.
+10. **`tools/export_openapi.py`** + `tools/__init__.py` — gera `docs/openapi.yaml`
+    deterministicamente (`Settings(_env_file=None)`, `yaml.safe_dump(width=4096)`,
+    sem dobra de linha para diffs legíveis). `tests/test_openapi_contract.py` é a
+    **guarda de deriva**: se o código mudar e o arquivo não, o teste falha.
+11. **Testes novos** — `tests/fakes.py` (implementações em memória dos Protocols),
+    `test_auth_service.py` (17), `test_circle_service.py` (18),
+    `test_location_service.py` (10), `test_api_routes.py` (27),
+    `test_openapi_contract.py` (5), `test_ws_location.py` (4). `test_security.py`
+    migrado de bcrypt para Argon2id (41).
+12. **Docs** — `docs/ARCHITECTURE.md` §7.1 "Contrato REST (HTTP)", §11 com ADR-006
+    decidida; `docs/adr/ADR-006-pwdlib-argon2id.md` criado; `docs/openapi.yaml`
+    versionado com 14 rotas.
+
+**Decisões técnicas tomadas**
+
+| # | Decisão | Justificativa |
+|---|---|---|
+| D27 | **`pwdlib` + Argon2id** no lugar de `passlib`/bcrypt | `passlib` está sem manutenção desde 2020 e quebra com `bcrypt` 5.x; Argon2id é o vencedor da Password Hashing Competition e é o default recomendado da própria `pwdlib`. ADR-006. |
+| D28 | REST sob `API_PREFIX` (`/api/v1`); health na raiz | versionamento explícito sem quebrar os probes de infraestrutura (systemd/Nginx batem em `/health`). |
+| D29 | Envelope de erro `{"error": {code, message}}` e 422 **sem** eco do input | contrato estável para o Flutter decidir o que fazer; payloads de auth contêm senha, então detalhes do 422 carregam só `loc`/`msg`/`type`. |
+| D30 | **404** (não 403) para círculo do qual o solicitante não é membro | 403 confirmaria a existência do ID, virando oráculo de enumeração. `403 FORBIDDEN` fica reservado a quem **é** membro mas não tem o papel. |
+| D31 | Rate limit 5/min/IP em `register` e `login`; `TRUST_PROXY_HEADERS=false` por padrão | freia credential stuffing sem bloquear NAT corporativo legítimo; confiar em `X-Forwarded-For` só quando há proxy reverso conhecido na frente. |
+| D32 | Reuso de refresh token revoga **todas** as sessões; `sub` divergente revoga as sessões do **dono da linha** | reuso é sinal clássico de roubo; o `sub` divergente indica forja/segredo comprometido — quem precisa ser protegido é o dono do registro, não o `sub` alegado. |
+| D33 | Repositories atrás de `Protocol` e **nunca** com `commit()` | permite testar regra de negócio sem PostgreSQL (as tabelas geoespaciais não rodam em SQLite) e mantém a fronteira transacional em um lugar só. |
+| D34 | `HTTPBearer(auto_error=False)` + `UnauthorizedError` explícito | o default do FastAPI devolve **403** para header ausente; o contrato exige 401. |
+| D35 | `login` em form-urlencoded (`OAuth2PasswordRequestForm`, `username` = e-mail); `register`/`refresh`/`logout` em JSON | mantém o botão *Authorize* do Swagger funcional sem abrir mão de JSON no resto. Todos os emissores de token exigem `X-Device-Id`. |
+| D36 | `Services.location_factory` é **fábrica**, não instância | `LocationService` carrega repositórios presos a uma sessão; cada requisição e cada lote de WS precisa da sua. |
+| D37 | `app/repositories/results.affected_rows()` | `AsyncSession.execute()` é tipado como `Result[Any]`, mas DML devolve `CursorResult`; centralizar o cast evita `# type: ignore` espalhado. |
+| D38 | Respostas de erro declaradas por router via `responses=` | sem isso o `openapi.yaml` não documenta 401/403/404/409/429 e o cliente Flutter não gera tipos para eles. |
+| D39 | `status.HTTP_422_UNPROCESSABLE_CONTENT` | a constante `..._ENTITY` está deprecada no Starlette atual. |
+| D40 | `LOCATION_BATCH` no WS: sessão curta + `commit()` explícito, **sem ACK** | um ACK por lote só geraria tráfego; o cliente considera entregue o que enviou e reenfileira no `ERROR`. |
+
+**Verificações executadas**
+
+- [x] `ruff check .` → **All checks passed!**
+- [x] `ruff format .` → **72 files left unchanged**
+- [x] `mypy app` → **Success: no issues found in 52 source files**
+- [x] `pytest -q` → **187 passed**
+- [x] `python tools/export_openapi.py` → `docs/openapi.yaml` com **14 rotas**
+- [x] `pytest tests/test_openapi_contract.py` → 5 passed (guarda de deriva verde)
+- [x] `tests/test_api_routes.py` cobre 401 sem token, 401 com token malformado, 401
+      de usuário deletado, 404 cross-circle, 403 de membro sem papel, 409 de convite
+      duplicado, 422 sem eco do payload e 429 com `Retry-After`
+- [x] `tests/test_ws_location.py` cobre lote válido (commit feito, silêncio), payload
+      inválido, ausência de `points` e falha de banco (socket não cai)
+- [x] `grep` de `passlib` no código de produção → **nenhuma ocorrência**
+
+**Bugs conhecidos / riscos residuais**
+
+- **DDL real nunca executado.** Não há PostgreSQL/Docker/`psql` neste ambiente.
+  `alembic upgrade head` continua validado apenas por renderização offline (`--sql`)
+  e pelo drift guard `tests/test_schema_metadata.py`. **Primeira execução real: VPS,
+  Fase 6.**
+- **`Message.token` deprecado** no firebase-admin 7.7 em favor de `fid`. Migração
+  pendente de validação contra a API real (warning filtrado no pytest).
+- **Teste de integração de WS com socket real** (`wss://` de verdade) continua
+  pendente — depende do banco e do deploy.
+- **`docs/openapi.yaml` não descreve o `/ws`**: OpenAPI 3.1 não modela WebSocket.
+  O contrato do socket vive em `docs/ARCHITECTURE.md` §7 (envelope `v`/`type`/`data`).
+- **Risco residual R6.1** (chave SSH `ssh-key-2026-09-24.key` dentro da árvore do
+  projeto) permanece mitigado por dupla camada de ignore; a movimentação para
+  `~/.ssh/` segue adiada para a Fase 6.
+- **Sem remote `origin` configurado** (decisão do usuário). Todos os commits são
+  locais.
+
+**Próximo passo exato**
+
+> Fase 3 — configuração nativa Android/iOS, **mediante aprovação explícita**.
+> Começar por `app/android/app/src/main/AndroidManifest.xml` (todas as permissões de
+> localização/microfone/foreground service), `BackgroundRelayService` em Kotlin com
+> `foregroundServiceType` explícito + notificação persistente + `START_STICKY`,
+> `BootReceiver`, canal `geoptt_relay` (importância `LOW`), handler
+> `_firebaseMessagingBackgroundHandler` com `@pragma('vm:entry-point')` fora de
+> classe, fluxo de isenção de bateria e `MethodChannel geoptt/background`
+> (`startRelay`, `stopRelay`, `isRelayRunning`). No iOS: `UIBackgroundModes`,
+> descrições de uso, PushKit + CallKit (avaliar risco de review — ADR-002) e
+> encaminhamento de tokens no `AppDelegate`.
+
+**Arquivos criados/alterados nesta entrada**
+
+```text
+backend/pyproject.toml                              (pwdlib[argon2], pyyaml, types-pyyaml)
+backend/app/core/{security,errors,rate_limit,container}.py
+backend/app/main.py
+backend/app/api/deps.py
+backend/app/api/routers/{auth,users,circles,location}.py
+backend/app/api/ws/ptt.py
+backend/app/repositories/{protocols,results,user_repository,token_repository,
+                          circle_repository,location_repository}.py
+backend/app/repositories/ptt_channel_repository.py
+backend/app/schemas/{auth,users,circles,location,errors}.py
+backend/app/services/{auth_service,user_service,circle_service,location_service}.py
+backend/tools/{__init__,export_openapi}.py
+backend/tests/{fakes,test_auth_service,test_circle_service,test_location_service,
+                test_api_routes,test_openapi_contract,test_ws_location}.py
+backend/tests/test_security.py                      (bcrypt -> Argon2id)
+docs/ARCHITECTURE.md                                (§7.1 + ADR-006 decidida)
+docs/adr/ADR-006-pwdlib-argon2id.md                 (novo)
+docs/openapi.yaml                                   (novo, 14 rotas)
+docs/TASKS.md                                       (Fase 2 concluída)
+docs/STATE_TRACEABILITY.md                          (esta entrada)
+```
+
+**Commits**
+
+```
+<COMMIT_HASH_PLACEHOLDER>  feat(backend): fecha Fase 2 com REST, OpenAPI e Argon2id
+```
+
+---
+
 ## Template para próximas entradas
 
 ```markdown

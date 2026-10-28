@@ -72,6 +72,10 @@ class Settings(BaseSettings):
 
     # --- HTTP ----------------------------------------------------------------
     cors_origins: str = ""
+    # Confiar em `X-Forwarded-For` só quando existe proxy reverso conhecido
+    # (Nginx na VPS). Caso contrário o cliente forjaria o IP e escaparia do
+    # rate limit de /auth/*.
+    trust_proxy_headers: bool = False
 
     # --- Logs ----------------------------------------------------------------
     log_level: LogLevel = "INFO"

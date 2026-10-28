@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from app.core.container import Services
 from app.core.security import TokenError, TokenType, decode_token
+from app.schemas.location import LocationBatchRequest
 from app.schemas.ws import (
     CLOSE_AUTH_TIMEOUT,
     CLOSE_HEARTBEAT_TIMEOUT,
@@ -205,6 +206,9 @@ async def _handle_text(connection: Connection, services: Services, raw: str) -> 
         case WsMessageType.PING:
             connection.enqueue_json(envelope(WsMessageType.PONG))
 
+        case WsMessageType.LOCATION_BATCH:
+            await _handle_location_batch(connection, services, inbound)
+
         case WsMessageType.PTT_DOWN:
             await _handle_ptt_down(connection, services, inbound)
 
@@ -262,6 +266,37 @@ async def _handle_ptt_up(connection: Connection, services: Services, inbound: Ws
     finally:
         if connection.active_channel_id == channel_id:
             connection.active_channel_id = None
+
+
+async def _handle_location_batch(
+    connection: Connection, services: Services, inbound: WsEnvelope
+) -> None:
+    """Ingestão de lote pelo socket: sessão curta própria + commit explícito.
+
+    O WebSocket vive muito além de qualquer transação, então não reaproveitamos
+    a sessão da requisição (que não existe aqui). Em sucesso **não** há ACK —
+    um frame por lote só geraria tráfego; o cliente considera entregue o que
+    enviou. Em falha devolvemos `ERROR` e ele reenfileira o lote.
+    """
+    try:
+        payload = LocationBatchRequest.model_validate(inbound.data)
+    except ValidationError:
+        connection.enqueue_json(
+            error_envelope(WsErrorCode.BAD_ENVELOPE, "lote de localização inválido")
+        )
+        return
+
+    try:
+        async with services.db.session_factory() as session:
+            service = services.location_factory(session)
+            await service.ingest_batch(user_id=connection.user_id, points=payload.points)
+            await session.commit()
+    except Exception:
+        logger.exception(
+            "falha ao ingerir lote de localização via WS",
+            extra={"event": "ws_location_batch_failed", "user_id": str(connection.user_id)},
+        )
+        connection.enqueue_json(error_envelope(WsErrorCode.INTERNAL, "falha ao gravar localização"))
 
 
 async def _handle_binary(connection: Connection, services: Services, payload: bytes) -> None:

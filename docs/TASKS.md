@@ -4,7 +4,7 @@
 > **aprovada explicitamente pelo usuário**. Cada fase termina com docs atualizados e
 > entrada em `docs/STATE_TRACEABILITY.md`.
 >
-> Última atualização: 2026-10-28 · Fase atual: **2 (em andamento)**
+> Última atualização: 2026-10-28 · Fase atual: **2 concluída — aguardando aprovação para a 3**
 >
 > Legenda: `[X]` concluído e verificado · `[~]` parcial · `[ ]` pendente
 
@@ -15,7 +15,7 @@
 | Fase | Escopo | Status | Bloqueia |
 |:---:|---|:---:|---|
 | **1** | Setup, `.gitignore`, regras, arquitetura, modelo de dados, rastreabilidade | ✅ `[X]` | tudo |
-| **2** | Backend FastAPI: Auth, Database, FCM, WebSocket Hub | 🚧 `[~]` | 3, 4, 5, 6 |
+| **2** | Backend FastAPI: Auth, Database, FCM, WebSocket Hub | ✅ `[X]` | 3, 4, 5, 6 |
 | **3** | Configuração nativa Android/iOS: permissões e background services | ⬜ `[ ]` | 4, 5 |
 | **4** | Frontend Flutter: GIS Tracker + OpenStreetMap | ⬜ `[ ]` | 6 |
 | **5** | Frontend Flutter: PTT Audio Engine (Opus) | ⬜ `[ ]` | 6 |
@@ -51,7 +51,7 @@ segredo está na árvore do repositório. → **ATENDIDO**
 
 ---
 
-## Fase 2 — Backend FastAPI (Auth, Database, FCM, WebSocket Router)
+## Fase 2 — Backend FastAPI (Auth, Database, FCM, WebSocket Router) ✅
 
 **Objetivo:** servidor funcional que autentica, persiste, mantém presença e dispara
 wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato prontos.
@@ -75,9 +75,10 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
 - [X] Migrations da Fase 1 do `DATA_MODEL.md` (users, circles, circle_members,
       locations, location_history, ptt_channels, ptt_channel_members, refresh_tokens).
 - [X] Habilitar PostGIS na migration inicial; fallback SQLite documentado para dev.
-- [~] Repositories: `UserRepository`, `CircleRepository`, `LocationRepository`,
+- [X] Repositories: `UserRepository`, `CircleRepository`, `LocationRepository`,
       `PttChannelRepository`, `TokenRepository`.
-      → **feito:** `PttChannelRepository`. **pendente:** os outros 4.
+      → 5 repositories atrás de `typing.Protocol`; nunca fazem `commit()` (só
+      `flush()`) — a transação pertence ao `get_session` por requisição.
 - [~] Teste: migrations sobem e descem (`alembic upgrade head` / `downgrade -1`).
       → **feito:** renderização offline do SQL (`upgrade head --sql`) + drift guard
       `tests/test_schema_metadata.py` (10 testes) comparando ORM × migration.
@@ -85,38 +86,41 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
 
 ### 2.3 Autenticação
 
-- [ ] `POST /auth/register` (email, password, display_name) — bcrypt.
-- [ ] `POST /auth/login` (OAuth2 password flow) → access + refresh.
-- [ ] `POST /auth/refresh` com rotação e revogação por `device_id`.
-- [ ] `POST /auth/logout` (revoga refresh do dispositivo).
-- [ ] Dependency `get_current_user` (JWT `sub` → `users.id`).
-- [ ] Rate limit em login/registro (5/min/IP).
-- [ ] Testes: registro duplicado, senha fraca, token expirado, refresh reutilizado.
+- [X] `POST /auth/register` (email, password, display_name) — **Argon2id** via
+      `pwdlib` (ADR-006; `passlib`/bcrypt removidos).
+- [X] `POST /auth/login` (OAuth2 password flow) → access + refresh.
+- [X] `POST /auth/refresh` com rotação e revogação por `device_id`.
+- [X] `POST /auth/logout` (revoga refresh do dispositivo).
+- [X] Dependency `get_current_user` (JWT `sub` → `users.id`).
+- [X] Rate limit em login/registro (5/min/IP).
+- [X] Testes: registro duplicado, senha fraca, token expirado, refresh reutilizado.
 
 ### 2.4 Usuários e FCM
 
-- [ ] `GET /users/me` e `PATCH /users/me` (`display_name`, `is_sharing_location`).
-- [ ] `POST /users/me/fcm-token` (token + platform) — idempotente.
-- [ ] `DELETE /users/me/fcm-token` (logout do dispositivo).
-- [ ] `FirebaseService.send_data_message(user_id, data, priority="high", ttl=0)`
+- [X] `GET /users/me` e `PATCH /users/me` (`display_name`, `is_sharing_location`).
+- [X] `POST /users/me/fcm-token` (token + platform) — idempotente.
+- [X] `DELETE /users/me/fcm-token` (logout do dispositivo).
+- [X] `FirebaseService.send_data_message(user_id, data, priority="high", ttl=0)`
       com tratamento de `UNREGISTERED` (limpa token) e retry/backoff.
-- [ ] Teste com mock do `firebase_admin.messaging`.
+- [X] Teste com mock do `firebase_admin.messaging`.
 
 ### 2.5 Círculos
 
-- [ ] `POST /circles` (cria círculo + membership `owner` + canal PTT padrão).
-- [ ] `POST /circles/join` (por `invite_code`).
-- [ ] `GET /circles` e `GET /circles/{id}/members` (com última posição e bateria).
-- [ ] `DELETE /circles/{id}/members/{user_id}` (owner/admin).
-- [ ] Autorização: nenhum acesso a círculo do qual não se é membro (teste 403).
+- [X] `POST /circles` (cria círculo + membership `owner` + canal PTT padrão).
+- [X] `POST /circles/join` (por `invite_code`).
+- [X] `GET /circles` e `GET /circles/{id}/members` (com última posição e bateria).
+- [X] `DELETE /circles/{id}/members/{user_id}` (owner/admin).
+- [X] Autorização: nenhum acesso a círculo do qual não se é membro.
+      → **404** (não 403) para círculo alheio, para não confirmar existência de ID;
+      **403 `FORBIDDEN`** só quando o solicitante é membro mas não tem o papel.
 
 ### 2.6 Localização
 
-- [ ] `POST /location/batch` (até 50 pontos, `ON CONFLICT DO NOTHING` por
+- [X] `POST /location/batch` (até 50 pontos, `ON CONFLICT DO NOTHING` por
       `client_seq`), atualiza `locations` e insere em `location_history`.
-- [ ] `GET /location/circle/{id}` (snapshot para o mapa).
-- [ ] Validação de faixa de lat/lng, `recorded_at` (futuro > 5 min rejeitado).
-- [ ] Testes: idempotência de reenvio, rejeição de coordenada inválida, isolamento
+- [X] `GET /location/circle/{id}` (snapshot para o mapa).
+- [X] Validação de faixa de lat/lng, `recorded_at` (futuro > 5 min rejeitado).
+- [X] Testes: idempotência de reenvio, rejeição de coordenada inválida, isolamento
       entre círculos.
 
 ### 2.7 WebSocket Hub
@@ -127,8 +131,10 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
       controle/áudio com backpressure) + `ConnectionManager`.
 - [X] `GET /ws` — auth por `?token=` **ou** frame `AUTH` em ≤ 3 s (senão `4401`).
 - [X] Heartbeat: `PING`/`PONG` com timeout de 60 s; limpeza de conexões mortas.
-- [ ] `LOCATION_BATCH` via WS reaproveitando o mesmo service do REST.
-- [ ] Broadcast de `LOCATION_UPDATE` para membros do círculo.
+- [X] `LOCATION_BATCH` via WS reaproveitando o mesmo service do REST
+      (sessão curta própria + `commit()` explícito; sem ACK em sucesso).
+- [X] Broadcast de `LOCATION_UPDATE` para membros do círculo (só o ponto mais
+      recente, e apenas se fresco — reenviar histórico não anima o mapa alheio).
 - [X] `PTTService`: `PTT_DOWN`/`PTT_UP`, `asyncio.Lock` por canal, `PTT_BUSY`,
       timeout de 60 s, `PTT_SPEAKER_START/STOP`.
 - [X] **Fallback FCM:** destinatário offline → `send_data_message(type="PTT_WAKEUP")`.
@@ -136,12 +142,14 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
       `PTT_DOWN`** (não por chunk de áudio).
 - [~] Teste de contrato do WS com `httpx`/`websockets`: auth inválida, busy,
       fallback disparado, reconexão.
-      → **feito:** 100 testes unitários com `FakeWebSocket` (auth, busy, fallback,
-      backpressure, heartbeat). **pendente:** teste de integração com socket real.
+      → **feito:** suíte unitária com `FakeWebSocket` (auth, busy, fallback,
+      backpressure, heartbeat, `LOCATION_BATCH`). **pendente:** teste de integração
+      com socket real, que exige PostgreSQL — fica para a Fase 6.
 
 ### 2.8 Contrato
 
-- [ ] Gerar e versionar `docs/openapi.yaml`.
+- [X] Gerar e versionar `docs/openapi.yaml` (`backend/tools/export_openapi.py` +
+      teste de deriva `tests/test_openapi_contract.py`).
 - [X] Documentar o envelope WS (`v`, `type`, `data`) em `docs/ARCHITECTURE.md` §7.
 
 **Critério de saída:** `pytest` verde (≥ 80% nos services), `mypy --strict` sem erro,
@@ -149,9 +157,18 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
 login → WS → `PTT_DOWN` → fallback FCM simulado.
 
 **Progresso em 2026-10-28 (entrada #003):** base do backend e migration prontas —
-`ruff` limpo, `mypy --strict` limpo (31 arquivos), **100 testes** verdes. Falta o
-incremento de auth/círculos/localização REST, os 4 repositories restantes e o
-`openapi.yaml`.
+`ruff` limpo, `mypy --strict` limpo (31 arquivos), **100 testes** verdes.
+
+**Concluída em 2026-10-28 (entrada #004):** REST completo sob `/api/v1`
+(`/auth`, `/users/me`, `/circles`, `/location/batch`, `/location/circle/{id}`),
+5 repositories atrás de `Protocol`, `docs/openapi.yaml` versionado com guarda de
+deriva, e a dívida do `passlib` resolvida com `pwdlib` + Argon2id (ADR-006).
+Gate: `ruff` limpo, `mypy --strict` limpo (52 arquivos), **187 testes** verdes.
+
+**Ressalva conhecida:** o DDL real (`alembic upgrade head`) nunca rodou — não há
+PostgreSQL/Docker neste ambiente. A migration é validada por renderização offline
+(`--sql`) e pelo drift guard `tests/test_schema_metadata.py`; a primeira execução
+real acontece na VPS (Fase 6).
 
 ---
 

@@ -316,6 +316,7 @@ class PttService:
                 session_id = await PttChannelRepository(session).start_session(
                     channel_id=channel_id, speaker_id=speaker_id, started_at=state.started_at
                 )
+                await session.commit()
         except Exception:
             logger.warning(
                 "falha ao registrar início de sessão PTT",
@@ -338,6 +339,7 @@ class PttService:
                     frames_sent=state.frames,
                     bytes_sent=state.bytes_sent,
                 )
+                await session.commit()
         except Exception:
             logger.warning(
                 "falha ao registrar fim de sessão PTT",

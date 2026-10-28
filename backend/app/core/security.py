@@ -1,7 +1,7 @@
-"""Primitivas de segurança: hash de senha (bcrypt) e tokens JWT.
+"""Primitivas de segurança: hash de senha (Argon2id) e tokens JWT.
 
-Não há rotas de autenticação aqui — apenas as funções usadas pelo handshake do
-WebSocket e, na próxima entrega da Fase 2, pelos routers `/auth/*`.
+Decisão de algoritmo: **ADR-006** (`docs/adr/ADR-006-pwdlib-argon2id.md`).
+`passlib` foi removido por estar sem manutenção e quebrar com `bcrypt` 5.x.
 """
 
 from __future__ import annotations
@@ -14,14 +14,17 @@ from typing import Any, Final
 from uuid import UUID, uuid4
 
 import jwt
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.exceptions import PwdlibError
 
 from app.core.config import Settings
 
-# bcrypt ignora bytes além do 72º; rejeitar explicitamente evita truncamento silencioso.
-BCRYPT_MAX_PASSWORD_BYTES: Final = 72
+# Limite de POLÍTICA (não do algoritmo): evita DoS de hashing com senhas enormes.
+MAX_PASSWORD_BYTES: Final = 128
+MIN_PASSWORD_LENGTH: Final = 8
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Argon2id com os parâmetros recomendados pela biblioteca.
+_password_hash = PasswordHash.recommended()
 
 
 class TokenType(StrEnum):
@@ -35,23 +38,53 @@ class TokenError(Exception):
     """Token ausente, malformado, expirado ou de tipo inesperado."""
 
 
-def hash_password(password: str) -> str:
-    """Gera o hash bcrypt da senha.
+def validate_password_policy(password: str) -> None:
+    """Aplica a política de senha. Levanta `ValueError` com mensagem acionável.
 
-    Levanta `ValueError` se a senha exceder 72 bytes em UTF-8.
+    Regras: 8 a 128 bytes, ao menos uma letra e um dígito.
     """
-    if len(password.encode("utf-8")) > BCRYPT_MAX_PASSWORD_BYTES:
-        msg = f"Senha excede {BCRYPT_MAX_PASSWORD_BYTES} bytes (limite do bcrypt)."
+    if len(password) < MIN_PASSWORD_LENGTH:
+        msg = f"Senha deve ter ao menos {MIN_PASSWORD_LENGTH} caracteres."
         raise ValueError(msg)
-    return _pwd_context.hash(password)
+    if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        msg = f"Senha excede {MAX_PASSWORD_BYTES} bytes."
+        raise ValueError(msg)
+    if not any(char.isalpha() for char in password):
+        msg = "Senha deve conter ao menos uma letra."
+        raise ValueError(msg)
+    if not any(char.isdigit() for char in password):
+        msg = "Senha deve conter ao menos um dígito."
+        raise ValueError(msg)
+
+
+def hash_password(password: str) -> str:
+    """Gera o hash Argon2id da senha."""
+    if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        msg = f"Senha excede {MAX_PASSWORD_BYTES} bytes."
+        raise ValueError(msg)
+    return _password_hash.hash(password)
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
-    """Compara senha e hash em tempo constante. Nunca levanta por hash inválido."""
+    """Compara senha e hash. Nunca levanta por hash inválido ou corrompido."""
     try:
-        return _pwd_context.verify(plain_password, password_hash)
-    except (ValueError, TypeError):
+        return _password_hash.verify(plain_password, password_hash)
+    except (PwdlibError, ValueError, TypeError):
+        # Hash de outro algoritmo (bcrypt legado), truncado ou vazio: nunca
+        # propagamos isso como 500 ? o resultado de seguran?a ? "n?o confere".
         return False
+
+
+def verify_and_upgrade(plain_password: str, password_hash: str) -> tuple[bool, str | None]:
+    """Verifica e, se o custo do hash estiver desatualizado, devolve um novo.
+
+    Retorna `(válido, novo_hash_ou_None)`. O chamador persiste o novo hash quando
+    não for `None` — re-hash transparente no login.
+    """
+    try:
+        return _password_hash.verify_and_update(plain_password, password_hash)
+    except (PwdlibError, ValueError, TypeError):
+        return False, None
 
 
 def hash_token(raw_token: str) -> str:

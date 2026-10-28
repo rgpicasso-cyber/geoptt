@@ -13,14 +13,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import health
+from app.api.routers import auth, circles, health, location, users
 from app.api.ws import ptt as ws_ptt
 from app.core.config import Settings, get_settings
 from app.core.container import Services
+from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
+from app.core.rate_limit import AUTH_RATE_LIMIT_PER_MINUTE, SlidingWindowLimiter
 from app.db.session import Database
 from app.services.connection_manager import ConnectionManager
 from app.services.fcm_service import FcmService
+from app.services.location_service import build_location_service
 from app.services.ptt_service import PttService
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             connections=connections,
             fcm=fcm,
             ptt=ptt,
+            auth_limiter=SlidingWindowLimiter(AUTH_RATE_LIMIT_PER_MINUTE, window_seconds=60.0),
+            location_factory=lambda session: build_location_service(session, manager=connections),
         )
 
         await fcm.start()
@@ -98,8 +103,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["Authorization", "Content-Type", "X-Device-Id"],
         )
 
+    register_error_handlers(app)
+
     app.include_router(health.router)
     app.include_router(ws_ptt.router)
+    app.include_router(auth.router, prefix=settings.api_prefix)
+    app.include_router(users.router, prefix=settings.api_prefix)
+    app.include_router(circles.router, prefix=settings.api_prefix)
+    app.include_router(location.router, prefix=settings.api_prefix)
 
     return app
 

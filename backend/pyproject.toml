@@ -20,11 +20,8 @@ dependencies = [
     "geoalchemy2>=0.16",
     "greenlet>=3.1",
     "firebase-admin>=6.6",
-    "passlib[bcrypt]>=1.7.4",
-    # passlib 1.7.4 chama `bcrypt.hashpw` com >72 bytes no self-test do backend.
-    # bcrypt 5.x passou a levantar ValueError nesse caso, quebrando a inicialização
-    # do CryptContext. Ver STATE_TRACEABILITY #003 (candidato a ADR: pwdlib).
-    "bcrypt>=4.2,<5",
+    # ADR-006: passlib foi removido (sem manutenção; quebra com bcrypt 5.x).
+    "pwdlib[argon2]>=0.3",
     "pyjwt>=2.10",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
@@ -39,8 +36,10 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
-    "types-passlib>=1.7.7",
     "aiosqlite>=0.20",
+    # Geração de docs/openapi.yaml (script tools/export_openapi.py).
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -109,7 +108,7 @@ exclude = ["alembic/versions/"]
 mypy_path = "."
 
 [[tool.mypy.overrides]]
-module = ["firebase_admin.*", "geoalchemy2.*", "passlib.*"]
+module = ["firebase_admin.*", "geoalchemy2.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
