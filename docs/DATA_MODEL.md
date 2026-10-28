@@ -85,7 +85,7 @@ Representa a pessoa. **Uma linha por conta** (não por dispositivo no MVP).
 |---|---|---|
 | `id` | `UUID` PK | `gen_random_uuid()` |
 | `email` | `TEXT` | único (case-insensitive), validado por Pydantic `EmailStr` |
-| `password_hash` | `TEXT` | **bcrypt** via `passlib`; nunca exposto em schema |
+| `password_hash` | `TEXT` | **Argon2id** via `pwdlib` (ADR-006); nunca exposto em schema |
 | `display_name` | `VARCHAR(60)` | 2–60 chars, sem HTML |
 | `avatar_url` | `TEXT` NULL | URL https |
 | **`fcm_token`** | `VARCHAR(255)` NULL | token FCM do dispositivo; atualizado em `POST /users/me/fcm-token`; **nunca logado em claro** |

@@ -316,7 +316,8 @@ Prefixo global `API_PREFIX` (padrão `/api/v1`). Health probes ficam na **raiz**
 ## 8. Segurança
 
 - **Auth:** OAuth2 password flow → `access_token` (15 min) + `refresh_token` (30 d,
-  rotativo, revogável por dispositivo). Hash de senha com bcrypt (`passlib`).
+  rotativo, revogável por dispositivo). Hash de senha com **Argon2id** via `pwdlib`
+  (ADR-006); `passlib`/bcrypt foram removidos.
 - **WebSocket:** token via query (`?token=`) **ou** primeiro frame `AUTH` com
   timeout de 3 s. Sem `AUTH_OK`, o servidor fecha com código `4401`.
 - **Autorização:** toda operação PTT/localização valida associação ao círculo/canal.
