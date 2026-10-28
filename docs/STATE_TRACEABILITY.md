@@ -353,6 +353,12 @@ docs/TASKS.md                    (alterado — Fase 2 parcialmente marcada)
 docs/STATE_TRACEABILITY.md       (alterado — snapshot + esta entrada)
 ```
 
+**Commits**
+
+```
+711042a  feat(backend): base FastAPI, hub WebSocket e migration PostGIS
+```
+
 ---
 
 ## Template para próximas entradas
