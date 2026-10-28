@@ -520,7 +520,7 @@ docs/STATE_TRACEABILITY.md                          (esta entrada)
 **Commits**
 
 ```
-<COMMIT_HASH_PLACEHOLDER>  feat(backend): fecha Fase 2 com REST, OpenAPI e Argon2id
+c6117f6  feat(backend): fecha Fase 2 com REST, OpenAPI e Argon2id
 ```
 
 ---
