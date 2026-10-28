@@ -20,7 +20,7 @@
 | Qualidade backend | `ruff check` ✅ · `ruff format --check` ✅ · `mypy --strict` ✅ · `pytest` **187 passed** |
 | Qualidade app | `flutter analyze` **0 issues** · `flutter test` **25 passed** · JUnit **27 passed** · `assembleDebug` ✅ |
 | Migration | `0001_initial` — 9 tabelas, PostGIS + pgcrypto, validada em modo **offline** |
-| Repositório Git | **inicializado** em `main`; Fase 1 `e1c1379`, Fase 2 `c6117f6`, Fase 3 Android (entrada #005) |
+| Repositório Git | **inicializado** em `main`; Fase 1 `e1c1379`, Fase 2 `c6117f6`, Fase 3 Android `34b83cd` (entrada #005) |
 | Segredos no repositório | **nenhum** (verificado no index e no histórico) |
 | Chave SSH | `C:\Nexo\ssh-key-2026-09-24.key` — presente no disco, **ignorada pelo Git** |
 
@@ -671,6 +671,12 @@ app/android/app/src/main/kotlin/com/geoptt/background/GeoPttMessagingService.kt
 app/android/app/src/main/kotlin/com/geoptt/background/BackgroundChannel.kt
 app/android/app/src/test/kotlin/com/geoptt/background/WakeupPayloadParserTest.kt
 app/android/app/src/test/kotlin/com/geoptt/background/RelayPolicyTest.kt
+```
+
+**Commits**
+
+```
+34b83cd  feat(app): conclui o módulo Android da Fase 3 (relay, boot e wake-up por FCM)
 ```
 
 ---
