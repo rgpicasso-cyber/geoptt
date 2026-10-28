@@ -41,6 +41,8 @@ qualquer linha de código de produção.
       `ptt_channel_members`, `ptt_sessions`, `refresh_tokens`.
 - [X] Criar `docs/TASKS.md` (este arquivo) com as 6 fases.
 - [X] Criar `docs/STATE_TRACEABILITY.md` com o registro inicial.
+- [X] Inicializar repositório Git (`main`), `.gitattributes` e commit de bootstrap
+      `912c390`; chave SSH confirmada fora do index e do histórico.
 
 **Critério de saída:** os 4 documentos existem, são coerentes entre si e nenhum
 segredo está na árvore do repositório. → **ATENDIDO**

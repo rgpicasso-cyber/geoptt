@@ -17,7 +17,9 @@
 | Stack | Flutter · FastAPI (Python 3.12) · PostgreSQL/PostGIS · SQLite · WebSockets · FCM · OSM/`flutter_map` · `just_audio` · Opus |
 | Infra de produção | VPS Ubuntu `163.176.229.20`, usuário `ubuntu`, acesso por chave SSH |
 | Código de produção | **zero linhas** (por decisão de processo) |
-| Segredos no repositório | **nenhum** (verificado) |
+| Repositório Git | **inicializado** em `main`, commit `912c390` |
+| Segredos no repositório | **nenhum** (verificado no index e no histórico) |
+| Chave SSH | `C:\Nexo\ssh-key-2026-09-24.key` — presente no disco, **ignorada pelo Git** |
 
 ---
 
@@ -117,6 +119,85 @@ docs/ARCHITECTURE.md            (novo)
 docs/DATA_MODEL.md              (novo)
 docs/TASKS.md                   (novo)
 docs/STATE_TRACEABILITY.md      (novo — este arquivo)
+```
+
+---
+
+### 2026-10-28 — Entrada #002 — Inicialização do repositório Git
+
+**Contexto:** a Fase 1 estava concluída, mas `C:\Nexo` ainda não era um repositório
+Git — o `.gitignore` não protegia nada de fato. O usuário também informou que a chave
+`ssh-key-2026-09-24.key` **não foi exposta** em chat/log (permanece válida, sem
+necessidade de rotação) e que ela foi movida para o diretório raiz do projeto.
+
+**O que foi feito**
+
+1. **Verificação prévia da chave:** listagem de metadados (nome/tamanho) em `C:\Nexo`
+   confirmou `ssh-key-2026-09-24.key` (1.679 bytes) na raiz. **Conteúdo não foi
+   aberto nem impresso** em nenhum momento.
+2. **`.gitattributes`** criado: `* text=auto eol=lf`, regras por extensão, binários
+   marcados (`*.aab`, `*.apk`, `*.ipa`, mídia) e segredos (`*.key`, `*.pem`, `*.p12`,
+   `*.jks`) tratados como binários para não vazar conteúdo em diff de CI.
+3. **`git init -b main`** executado na raiz.
+4. **Proteção em duas camadas** contra versionamento da chave:
+   - camada 1 (versionada): `.gitignore` linha 34 → `ssh-key-*.key`;
+   - camada 2 (local, não versionada): `.git/info/exclude` com `ssh-key-*.key`,
+     `*.key`, `*.pem`, `.env`. Sobrevive a uma edição acidental do `.gitignore`.
+5. **Identidade Git local** configurada (apenas neste repo, não altera a global):
+   `GeoPTT TechLead <techlead@geoptt.local>`.
+6. **Varredura pré-commit** do index com regex de segredos → 0 ocorrências.
+7. **Commit `912c390`** — `docs: bootstrap fase 1 - arquitetura, modelo de dados,
+   roadmap e protecao de credenciais` (16 arquivos).
+
+**Decisões técnicas tomadas**
+
+| # | Decisão | Justificativa |
+|---|---|---|
+| D10 | Branch inicial `main` | padrão moderno; evita renomear depois |
+| D11 | `.git/info/exclude` além do `.gitignore` | defesa em profundidade contra edição acidental do ignore |
+| D12 | Identidade **local** e neutra (`techlead@geoptt.local`) | não polui a config global da máquina; trivial trocar com `--amend --reset-author` |
+| D13 | `.gitattributes` com `eol=lf` | repositório consistente entre Windows (dev) e Ubuntu (VPS) |
+| D14 | Chave **mantida** na raiz (decisão do usuário), não movida | usuário confirmou que não houve exposição; risco residual aceito e documentado |
+
+**Verificações executadas**
+
+- [x] `git check-ignore -v -- ssh-key-2026-09-24.key` →
+      `.gitignore:34:ssh-key-*.key` (regra que casa).
+- [x] `git add -A` + inspeção do index: 16 arquivos, **nenhum** `.key`/`.pem`/`.env`.
+- [x] `git ls-files` → nenhuma chave rastreada.
+- [x] `git log --all --diff-filter=A --name-only` → **nenhuma chave em nenhum commit**.
+- [x] `git status --short --branch` → `## main` (árvore limpa).
+- [x] Chave ainda presente no disco após o commit (1.679 bytes) — o Git não a tocou.
+
+**Bugs conhecidos**
+
+- Nenhum.
+- **Risco residual aceito (R6.1):** a chave privada vive dentro da árvore do projeto.
+  Um `git add -f ssh-key-2026-09-24.key` a forçaria para o index. Mitigação atual:
+  dupla camada de ignore + varredura pré-commit + regra §9 do `rules.md`.
+  **Recomendação futura:** mover para `C:\Users\<usuario>\.ssh\` (fora do repo) e
+  ajustar o comando de deploy.
+
+**Próximo passo exato (Fase 2 — Backend FastAPI)**
+
+> Criar `backend/pyproject.toml` (Python 3.12, `ruff`, `mypy --strict`, `pytest`,
+> `pytest-asyncio`, `httpx`), `backend/app/core/config.py` (`pydantic-settings`),
+> `backend/app/main.py` (factory + `lifespan`), `backend/.env.example` sem valores e
+> a migration inicial Alembic com o DDL de `docs/DATA_MODEL.md` §3
+> (`CREATE EXTENSION postgis` incluído).
+
+**Arquivos criados/alterados nesta entrada**
+
+```
+.gitattributes                  (novo)
+.git/info/exclude               (alterado — camada 2 de proteção, local)
+docs/STATE_TRACEABILITY.md      (alterado — snapshot + esta entrada)
+```
+
+**Commits**
+
+```
+912c390  docs: bootstrap fase 1 - arquitetura, modelo de dados, roadmap e protecao de credenciais
 ```
 
 ---
