@@ -23,10 +23,12 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.models.enums import Platform
 from app.repositories.ptt_channel_repository import ChannelInfo, PttChannelRepository
 from app.schemas.ws import WsErrorCode, WsMessageType, envelope
+from app.services.apns_service import ApnsPttService, ApnsWakeupResult
 from app.services.connection_manager import ConnectionManager
-from app.services.fcm_service import FcmService
+from app.services.fcm_service import FcmService, WakeupResult
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +101,13 @@ class PttService:
         *,
         manager: ConnectionManager,
         fcm: FcmService,
+        apns: ApnsPttService,
         session_factory: async_sessionmaker[AsyncSession],
         settings: Settings,
     ) -> None:
         self._manager = manager
         self._fcm = fcm
+        self._apns = apns
         self._session_factory = session_factory
         self._settings = settings
         self._states: dict[UUID, _ChannelState] = {}
@@ -269,7 +273,7 @@ class PttService:
     async def _wake_offline_members(
         self, info: ChannelInfo, *, sender_id: UUID, call_id: UUID
     ) -> None:
-        """Dispara FCM para membros sem socket ativo — uma vez por pressão."""
+        """Dispara FCM (Android) e APNs PTT (iOS) para membros sem socket ativo — uma vez por pressão."""
         offline = [
             member
             for member in info.members
@@ -278,34 +282,62 @@ class PttService:
         if not offline:
             return
 
-        results = await asyncio.gather(
-            *(
-                self._fcm.send_wakeup(
-                    user_id=member.user_id,
-                    fcm_token=member.fcm_token,
-                    platform=member.platform,
+        # Agrupar por plataforma
+        android_members = [m for m in offline if m.platform == Platform.ANDROID]
+        ios_members = [m for m in offline if m.platform == Platform.IOS]
+
+        # Fan-out FCM (Android)
+        if android_members:
+            results: list[WakeupResult | BaseException] = await asyncio.gather(
+                *(
+                    self._fcm.send_wakeup(
+                        user_id=member.user_id,
+                        fcm_token=member.fcm_token,
+                        platform=member.platform,
+                        channel_id=info.id,
+                        sender_id=sender_id,
+                        call_id=call_id,
+                    )
+                    for member in android_members
+                ),
+                return_exceptions=True,
+            )
+
+            for member, result in zip(android_members, results, strict=True):
+                if isinstance(result, BaseException):
+                    logger.warning(
+                        "erro inesperado ao acordar membro (FCM)",
+                        extra={"event": "fcm_wakeup_error", "user_id": str(member.user_id)},
+                        exc_info=result,
+                    )
+                elif result.invalid_token:
+                    logger.info(
+                        "token FCM inválido detectado no fan-out",
+                        extra={"event": "fcm_invalid_token", "user_id": str(member.user_id)},
+                    )
+
+        # Fan-out APNs PTT (iOS)
+        if ios_members:
+            for member in ios_members:
+                if not member.apns_ephemeral_token:
+                    logger.debug(
+                        "membro iOS sem token efêmero APNs, pulando push PTT",
+                        extra={"event": "apns_wakeup_skipped", "user_id": str(member.user_id)},
+                    )
+                    continue
+
+                apns_result = await self._apns.send_ephemeral_push(
+                    ephemeral_token=member.apns_ephemeral_token,
                     channel_id=info.id,
                     sender_id=sender_id,
                     call_id=call_id,
                 )
-                for member in offline
-            ),
-            return_exceptions=True,
-        )
 
-        for member, result in zip(offline, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(
-                    "erro inesperado ao acordar membro",
-                    extra={"event": "fcm_wakeup_error", "user_id": str(member.user_id)},
-                    exc_info=result,
-                )
-            elif result.invalid_token:
-                # O chamador (camada HTTP) limpa users.fcm_token; aqui só sinalizamos.
-                logger.info(
-                    "token FCM inválido detectado no fan-out",
-                    extra={"event": "fcm_invalid_token", "user_id": str(member.user_id)},
-                )
+                if apns_result.invalid_token:
+                    logger.info(
+                        "token efêmero APNs inválido detectado",
+                        extra={"event": "apns_invalid_token", "user_id": str(member.user_id)},
+                    )
 
     async def _record_session_start(
         self, channel_id: UUID, call_id: UUID, speaker_id: UUID, state: _ChannelState

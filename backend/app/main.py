@@ -21,6 +21,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.core.rate_limit import AUTH_RATE_LIMIT_PER_MINUTE, SlidingWindowLimiter
 from app.db.session import Database
+from app.services.apns_service import ApnsPttService
 from app.services.connection_manager import ConnectionManager
 from app.services.fcm_service import FcmService
 from app.services.location_service import build_location_service
@@ -51,9 +52,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             audio_queue_size=settings.ws_audio_queue_size,
         )
         fcm = FcmService(settings)
+        apns = ApnsPttService(settings)
         ptt = PttService(
             manager=connections,
             fcm=fcm,
+            apns=apns,
             session_factory=db.session_factory,
             settings=settings,
         )
@@ -63,12 +66,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db=db,
             connections=connections,
             fcm=fcm,
+            apns=apns,
             ptt=ptt,
             auth_limiter=SlidingWindowLimiter(AUTH_RATE_LIMIT_PER_MINUTE, window_seconds=60.0),
             location_factory=lambda session: build_location_service(session, manager=connections),
         )
 
         await fcm.start()
+        await apns.start()
         logger.info(
             "aplicação iniciada",
             extra={"event": "startup", "platform": settings.env},
@@ -81,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await ptt.shutdown()
             await connections.close_all()
             await fcm.stop()
+            await apns.stop()
             await db.dispose()
             logger.info("aplicação encerrada", extra={"event": "shutdown"})
 

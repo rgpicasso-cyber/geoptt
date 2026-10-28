@@ -42,8 +42,9 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(60), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # --- Push (FCM) ---------------------------------------------------------
+    # --- Push (FCM / APNs) --------------------------------------------------
     fcm_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    apns_ephemeral_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     platform: Mapped[Platform | None] = mapped_column(
         str_enum(Platform, "user_platform"), nullable=True
     )

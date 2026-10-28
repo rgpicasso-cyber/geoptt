@@ -71,6 +71,7 @@ def build_services(
         db=cast(Any, db),
         connections=cast(Any, None),
         fcm=cast(Any, None),
+        apns=cast(Any, None),
         ptt=cast(Any, None),
         auth_limiter=cast(Any, None),
         location_factory=cast(Any, lambda _session: service),

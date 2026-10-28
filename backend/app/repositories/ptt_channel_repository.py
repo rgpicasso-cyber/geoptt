@@ -29,6 +29,7 @@ class ChannelMember:
     user_id: UUID
     can_speak: bool
     fcm_token: str | None
+    apns_ephemeral_token: str | None
     platform: Platform | None
 
 
@@ -52,7 +53,7 @@ class PttChannelRepository:
 
     # ------------------------------------------------------------------ leitura
     async def get_channel_info(self, channel_id: UUID) -> ChannelInfo | None:
-        """Canal + membros (com token FCM) em duas queries."""
+        """Canal + membros (com tokens FCM e APNs) em duas queries."""
         channel = await self._session.get(PttChannel, channel_id)
         if channel is None:
             return None
@@ -62,6 +63,7 @@ class PttChannelRepository:
                 PttChannelMember.user_id,
                 PttChannelMember.can_speak,
                 User.fcm_token,
+                User.apns_ephemeral_token,
                 User.platform,
             )
             .join(User, User.id == PttChannelMember.user_id)
@@ -74,7 +76,8 @@ class PttChannelRepository:
                 user_id=row[0],
                 can_speak=row[1],
                 fcm_token=row[2],
-                platform=row[3],
+                apns_ephemeral_token=row[3],
+                platform=row[4],
             )
             for row in rows
         )

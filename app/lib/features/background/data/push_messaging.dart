@@ -63,9 +63,11 @@ class PushMessagingState {
 /// (Fase 4) — aqui não há sessão para autenticar.
 class PushMessaging {
   PushMessaging({FirebaseMessaging? messaging})
-    : _messaging = messaging ?? FirebaseMessaging.instance;
+    : _messaging = messaging;
 
-  final FirebaseMessaging _messaging;
+  final FirebaseMessaging? _messaging;
+
+  FirebaseMessaging get _messagingOrDefault => _messaging ?? FirebaseMessaging.instance;
 
   /// Idempotente: o plugin ignora registros repetidos.
   static void registerBackgroundHandler() {
@@ -92,7 +94,7 @@ class PushMessaging {
 
     registerBackgroundHandler();
 
-    final NotificationSettings settings = await _messaging.getNotificationSettings();
+    final NotificationSettings settings = await _messagingOrDefault.getNotificationSettings();
 
     return PushMessagingState(
       available: true,
@@ -103,7 +105,7 @@ class PushMessaging {
 
   /// Pede a permissão de notificação (Android 13+/iOS). Retorna o status resultante.
   Future<AuthorizationStatus> requestPermission() async {
-    final NotificationSettings settings = await _messaging.requestPermission();
+    final NotificationSettings settings = await _messagingOrDefault.requestPermission();
     return settings.authorizationStatus;
   }
 
@@ -123,11 +125,11 @@ class PushMessaging {
   /// o `ignore` fica isolado nestes dois pontos para não mascarar outras depreciações.
   Future<String?> _registrationToken() async {
     // ignore: deprecated_member_use
-    return _messaging.getToken();
+    return _messagingOrDefault.getToken();
   }
 
   Stream<String> _tokenRefreshes() {
     // ignore: deprecated_member_use
-    return _messaging.onTokenRefresh;
+    return _messagingOrDefault.onTokenRefresh;
   }
 }

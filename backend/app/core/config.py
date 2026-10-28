@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     fcm_project_id: str | None = None
     fcm_wakeup_rate_limit_per_minute: int = Field(default=10, ge=1, le=120)
 
+    # --- APNs (iOS PushToTalk) ----------------------------------------------
+    apns_enabled: bool = True
+    apns_use_sandbox: bool = True
+    apns_auth_key_path: str | None = None
+    apns_key_id: str | None = None
+    apns_team_id: str | None = None
+    apns_bundle_id: str | None = None
+
     # --- HTTP ----------------------------------------------------------------
     cors_origins: str = ""
     # Confiar em `X-Forwarded-For` só quando existe proxy reverso conhecido
@@ -129,6 +137,23 @@ class Settings(BaseSettings):
                 "Em ENV=production com FCM_ENABLED=true, FCM_CREDENTIALS_PATH é "
                 "obrigatório (arquivo fora do repositório, ex.: "
                 "/opt/geoptt/secrets/serviceAccountKey.json)."
+            )
+            raise ValueError(msg)
+
+        if self.apns_enabled and not self.apns_auth_key_path:
+            msg = (
+                "Em ENV=production com APNS_ENABLED=true, APNS_AUTH_KEY_PATH é "
+                "obrigatório (arquivo .p8 fora do repositório, ex.: "
+                "/opt/geoptt/secrets/AuthKey_XXXXXXXX.p8)."
+            )
+            raise ValueError(msg)
+
+        if self.apns_enabled and not all(
+            [self.apns_key_id, self.apns_team_id, self.apns_bundle_id]
+        ):
+            msg = (
+                "Em ENV=production com APNS_ENABLED=true, APNS_KEY_ID, APNS_TEAM_ID e "
+                "APNS_BUNDLE_ID são obrigatórios."
             )
             raise ValueError(msg)
 

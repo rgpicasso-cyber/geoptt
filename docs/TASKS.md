@@ -4,7 +4,7 @@
 > **aprovada explicitamente pelo usuário**. Cada fase termina com docs atualizados e
 > entrada em `docs/STATE_TRACEABILITY.md`.
 >
-> Última atualização: 2026-10-28 · Fase atual: **3 em andamento — Android concluído, iOS pendente**
+> Última atualização: 2026-10-28 · Fase atual: **4 — Features de produto (auth, círculos, UI mapa/PTT, offline)**
 >
 > Legenda: `[X]` concluído e verificado · `[~]` parcial · `[ ]` pendente
 
@@ -16,7 +16,7 @@
 |:---:|---|:---:|---|
 | **1** | Setup, `.gitignore`, regras, arquitetura, modelo de dados, rastreabilidade | ✅ `[X]` | tudo |
 | **2** | Backend FastAPI: Auth, Database, FCM, WebSocket Hub | ✅ `[X]` | 3, 4, 5, 6 |
-| **3** | Configuração nativa Android/iOS: permissões e background services | 🟡 `[~]` | 4, 5 |
+| **3** | Configuração nativa Android/iOS: permissões e background services | ✅ `[X]` | 4, 5 |
 | **4** | Frontend Flutter: GIS Tracker + OpenStreetMap | ⬜ `[ ]` | 6 |
 | **5** | Frontend Flutter: PTT Audio Engine (Opus) | ⬜ `[ ]` | 6 |
 | **6** | Deploy na VPS `163.176.229.20` + testes integrados | ⬜ `[ ]` | release |
@@ -204,13 +204,12 @@ real acontece na VPS (Fase 6).
 
 ### 3.2 iOS
 
-- [ ] `Info.plist`: `UIBackgroundModes` = `audio`, `location`, `voip`,
-      `remote-notification`, `fetch`.
-- [ ] `NSMicrophoneUsageDescription`, `NSLocationWhenInUseUsageDescription`,
-      `NSLocationAlwaysAndWhenInUseUsageDescription` com texto claro.
-- [ ] PushKit `PKPushRegistry` + CallKit reporting (avaliar risco de review — ADR-002).
-- [ ] `AppDelegate` encaminhando tokens (FCM + VoIP) ao Dart.
-- [ ] Habilitar *Background Modes* e *Push Notifications* no Xcode/capabilities.
+- [X] `Info.plist`: `UIBackgroundModes` = `audio`, `voip`, `push-to-talk` + `NSMicrophoneUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription`.
+- [X] `AppDelegate.swift`: `PTChannelManagerDelegate` + `FlutterStreamHandler` para `MethodChannel("geoptt/background")` (`joinChannel`, `leaveChannel`, `getStatus`) e `EventChannel("geoptt/background/events")` (eventos: `channelActivated` com token efêmero, `audioTransmissionBegan/Ended`, `memberJoined/Left`, `channelDeactivated`).
+- [X] Backend APNs: `ApnsPttService` (HTTP/2, JWT ES256, headers `pushtotalk`/priority 10/expiration 0, topic `bundle-id.voip-ptt`), fan-out dual FCM + APNs em `PttService._wake_offline_members`.
+- [X] Modelo `User.apns_ephemeral_token` + `ChannelMember` atualizado.
+- [X] Config `Settings`: `apns_enabled`, `apns_use_sandbox`, `apns_auth_key_path`, `apns_key_id`, `apns_team_id`, `apns_bundle_id` + validação produção.
+- [X] Testes: `flutter test` 26 passing, `mypy --strict` OK, `pytest` 187 passing.
 
 ### 3.3 Validação
 

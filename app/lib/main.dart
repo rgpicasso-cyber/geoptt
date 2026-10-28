@@ -17,7 +17,15 @@ void main() {
 }
 
 class GeoPttApp extends StatelessWidget {
-  const GeoPttApp({super.key});
+  const GeoPttApp({
+    super.key,
+    this.bridge,
+    this.push,
+  });
+
+  /// Injeção para testes de widget.
+  final BackgroundBridge? bridge;
+  final PushMessaging? push;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +36,7 @@ class GeoPttApp extends StatelessWidget {
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF1565C0),
       ),
-      home: const RelayDiagnosticsPage(),
+      home: RelayDiagnosticsPage(bridge: bridge, push: push),
     );
   }
 }

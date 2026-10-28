@@ -1,0 +1,43 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "openrouter": {
+      "name": "OpenRouter",
+      "env": ["OPENROUTER_API_KEY"],
+      "package": "@opencode/ai/providers/openrouter",
+      "settings": {
+        "baseURL": "https://openrouter.ai/api/v1"
+      },
+      "models": {
+        "meta-llama/llama-3.1-8b-instruct:free": {
+          "name": "Llama 3.1 8B (free)",
+          "modelID": "meta-llama/llama-3.1-8b-instruct:free"
+        },
+        "google/gemma-2-9b-it:free": {
+          "name": "Gemma 2 9B (free)",
+          "modelID": "google/gemma-2-9b-it:free"
+        },
+        "microsoft/phi-3-mini-128k-instruct:free": {
+          "name": "Phi-3 Mini 128K (free)",
+          "modelID": "microsoft/phi-3-mini-128k-instruct:free"
+        },
+        "qwen/qwen-2.5-7b-instruct:free": {
+          "name": "Qwen 2.5 7B (free)",
+          "modelID": "qwen/qwen-2.5-7b-instruct:free"
+        },
+        "deepseek/deepseek-chat-v3-0324:free": {
+          "name": "DeepSeek Chat V3 (free)",
+          "modelID": "deepseek/deepseek-chat-v3-0324:free"
+        },
+        "mistralai/mistral-7b-instruct:free": {
+          "name": "Mistral 7B (free)",
+          "modelID": "mistralai/mistral-7b-instruct:free"
+        },
+        "openrouter/auto": {
+          "name": "Auto Router (free)",
+          "modelID": "openrouter/auto"
+        }
+      }
+    }
+  }
+}

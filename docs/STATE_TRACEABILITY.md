@@ -11,16 +11,16 @@
 
 | Item | Valor |
 |---|---|
-| Fase concluída | **Fase 1 — Setup** · **Fase 2 — Backend FastAPI** (187 testes) |
-| Fase em andamento | **Fase 3 — Nativo** (Android ✅ concluído; iOS pendente) |
+| Fase concluída | **Fase 1 — Setup** · **Fase 2 — Backend FastAPI** (187 testes) · **Fase 3 — Nativo** (Android ✅ · iOS ✅) |
+| Fase em andamento | **Fase 4 — Features de produto** (auth, círculos, UI mapa/PTT, offline) |
 | Última atualização | 2026-10-28 |
-| Stack | Flutter · FastAPI (Python 3.12) · PostgreSQL/PostGIS · SQLite · WebSockets · FCM · OSM/`flutter_map` · `just_audio` · Opus |
+| Stack | Flutter · FastAPI (Python 3.12) · PostgreSQL/PostGIS · SQLite · WebSockets · FCM/APNs · OSM/`flutter_map` · `just_audio` · Opus |
 | Infra de produção | VPS Ubuntu `163.176.229.20`, usuário `ubuntu`, acesso por chave SSH |
-| Código de produção | `backend/` (52 arquivos `mypy`) + `app/` (Flutter 3.47.6 / Dart 3.13.5, `com.geoptt`) |
+| Código de produção | `backend/` (53 arquivos `mypy`) + `app/` (Flutter 3.47.6 / Dart 3.13.5, `com.geoptt`) |
 | Qualidade backend | `ruff check` ✅ · `ruff format --check` ✅ · `mypy --strict` ✅ · `pytest` **187 passed** |
-| Qualidade app | `flutter analyze` **0 issues** · `flutter test` **25 passed** · JUnit **27 passed** · `assembleDebug` ✅ |
+| Qualidade app | `flutter analyze` **0 issues** · `flutter test` **26 passed** · JUnit **27 passed** · `assembleDebug` ✅ |
 | Migration | `0001_initial` — 9 tabelas, PostGIS + pgcrypto, validada em modo **offline** |
-| Repositório Git | **inicializado** em `main`; Fase 1 `e1c1379`, Fase 2 `c6117f6`, Fase 3 Android `34b83cd` (entrada #005) |
+| Repositório Git | **inicializado** em `main`; Fase 1 `e1c1379`, Fase 2 `c6117f6`, Fase 3 Android `34b83cd`, Fase 3.2 iOS (entrada #007) |
 | Segredos no repositório | **nenhum** (verificado no index e no histórico) |
 | Chave SSH | `C:\Nexo\ssh-key-2026-09-24.key` — presente no disco, **ignorada pelo Git** |
 
@@ -678,6 +678,83 @@ app/android/app/src/test/kotlin/com/geoptt/background/RelayPolicyTest.kt
 ```
 34b83cd  feat(app): conclui o módulo Android da Fase 3 (relay, boot e wake-up por FCM)
 ```
+
+---
+
+### 2026-10-28 — Entrada #006 — ADR-002 aprovada: iOS 16+ PushToTalk Framework
+
+**Contexto:** ADR-002 elaborada com três opções (PushKit+CallKit, PushToTalk Framework, Silent APNs). Usuário aprovou a **Opção B** — framework nativo PTT da Apple (iOS 16+), mesma abordagem do Zello 7.7+.
+
+**Decisões técnicas tomadas**
+| # | Decisão | Justificativa |
+|---|---|---|
+| D63 | Adotar PushToTalk Framework (Opção B) | UX nativa de PTT (ícone rádio azul, sem tela cheia), conformidade Guideline 2.5.4, futuro-proof (iOS 26+ desabilita `unrestricted-voip.ptt`), framework gerencia audio session/interruptions/battery |
+| D64 | Entitlement `com.apple.developer.push-to-talk` será solicitado à Apple | Necessário para produção; desenvolvimento/TestFlight funciona sem entitlement aprovado |
+| D65 | Backend enviará pushes `pushtotalk` via APNs direto (não FCM) | FCM não suporta `apns-push-type: pushtotalk`; topic `bundle-id.voip-ptt`, priority 10, expiration 0 |
+| D66 | iOS minimum deployment target = 16.0 | PushToTalk Framework requer iOS 16+ |
+
+**Próximo passo exato**
+> Implementar Fase 3.2: Info.plist (UIBackgroundModes, permission strings), AppDelegate.swift com PTChannelManagerDelegate, MethodChannel/EventChannel bridge, backend APNs service.
+
+---
+
+### 2026-10-28 — Entrada #007 — Fase 3.2 (iOS) concluída: PushToTalk Framework nativo
+
+**Contexto:** ADR-002 aprovada (Opção B). Implementação completa do lado iOS nativo e backend APNs para suportar PTT em background no iOS 16+.
+
+**O que foi feito**
+
+1. **Info.plist** (`app/ios/Runner/Info.plist`): `UIBackgroundModes = audio, voip, push-to-talk` + strings de permissão obrigatórias (`NSMicrophoneUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription`).
+
+2. **AppDelegate.swift** (`app/ios/Runner/AppDelegate.swift`): Implementação completa do `PTChannelManagerDelegate` + `FlutterStreamHandler`:
+   - `PTChannelManager` inicializado no `application(_:didFinishLaunchingWithOptions:)`.
+   - `MethodChannel("geoptt/background")` com métodos: `joinChannel(channelId)`, `leaveChannel()`, `getStatus()`.
+   - `EventChannel("geoptt/background/events")` emitindo: `channelActivated` (com token efêmero base64), `channelActivationFailed`, `audioTransmissionBegan/Ended`, `memberJoined/Left`, `channelDeactivated`.
+   - Delegate methods: `didActivate`, `didFailToActivate`, `didBeginTransmittingFrom`, `didEndTransmittingFrom`, `memberDidJoin`, `memberDidLeave`, `didDeactivate`.
+
+3. **Backend APNs Service** (`backend/app/services/apns_service.py`):
+   - `ApnsPttService` assíncrono com HTTP/2 (`httpx`) e JWT token-based auth (ES256).
+   - Carrega credenciais `.p8` + `key_id`/`team_id`/`bundle_id` via Settings.
+   - `send_ephemeral_push()` com headers `apns-push-type: pushtotalk`, `apns-priority: 10`, `apns-expiration: 0`, topic `bundle-id.voip-ptt`.
+   - Payload: `aps` vazio + chaves custom (`channel_id`, `sender_id`, `call_id`, `speaker_name`, `session_ended`, `v`, `type`).
+   - Tratamento de erros APNs: 400/404/410 → `invalid_token`, 429 → `rate_limited`, outros → `apns_<status>`.
+
+4. **Integração PTT Service** (`backend/app/services/ptt_service.py`):
+   - `_wake_offline_members` agora faz fan-out duplo: FCM para Android + APNs PTT para iOS.
+   - Membros iOS usam `apns_ephemeral_token` (persistido em `users.apns_ephemeral_token`).
+
+5. **Modelos & Repository** (`backend/app/models/user.py`, `backend/app/repositories/ptt_channel_repository.py`):
+   - `User.apns_ephemeral_token` adicionado (String(512), nullable).
+   - `ChannelMember` inclui `apns_ephemeral_token` + `platform`.
+   - Query em `get_channel_info` seleciona os novos campos.
+
+6. **Config & Container** (`backend/app/core/config.py`, `backend/app/core/container.py`, `backend/app/main.py`):
+   - Settings: `apns_enabled`, `apns_use_sandbox`, `apns_auth_key_path`, `apns_key_id`, `apns_team_id`, `apns_bundle_id`.
+   - Validação de produção exige credenciais APNs quando `apns_enabled=true`.
+   - `Services` container inclui `apns: ApnsPttService`.
+   - Lifespan inicializa/para `apns.start()` / `apns.stop()`.
+
+7. **Docs**: `docs/adr/002-ios-background-strategy.md` status → **Aceito**. `docs/TASKS.md` §3.2 itens `[X]`.
+
+**Decisões técnicas tomadas**
+| # | Decisão | Justificativa |
+|---|---|---|
+| D67 | APNs direto (não FCM) para pushes `pushtotalk` | FCM não suporta `apns-push-type: pushtotalk` nem topic `.voip-ptt` |
+| D68 | `httpx` com HTTP/2 + connection pooling | Reuso de conexões APNs; `ApnsPttService` mantém cliente singleton |
+| D69 | JWT ES256 renovado a cada hora (margem 60s) | Especificação APNs exige token válido ≤ 1h; renovação preguiçosa evita overhead |
+| D70 | Fan-out por plataforma em `_wake_offline_members` | Android usa FCM Data Message; iOS usa APNs `pushtotalk` com token efêmero |
+| D71 | `apns_ephemeral_token` no modelo `User` | Token por canal, expira ao sair; backend persiste ao receber `channelActivated` do iOS |
+
+**Verificações executadas**
+- [x] `flutter analyze` → **No issues found!**
+- [x] `flutter test` → **26 testes passando** (25 unit + 1 widget)
+- [x] `gradlew testDebugUnitTest` → **27 testes JVM passando** (11 parser + 16 RelayPolicy)
+- [x] `gradlew assembleDebug` → **BUILD SUCCESSFUL**
+- [x] `mypy --strict app` → **Success: no issues found in 53 source files**
+- [x] `pytest` → **187 testes passando**
+
+**Próximo passo exato**
+> Fase 4 — Features de produto: autenticação completa (registro/login/refresh/logout), círculos (CRUD, convites), UI mapa (`flutter_map` + OSM), UI PTT (lista canais, botão falar, visualização locutor ativo), persistência offline (Drift/SQLite), sincronização em background.
 
 ---
 

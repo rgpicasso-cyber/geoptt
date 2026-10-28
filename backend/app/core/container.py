@@ -17,6 +17,7 @@ from app.core.rate_limit import SlidingWindowLimiter
 
 if TYPE_CHECKING:  # pragma: no cover - apenas para tipagem
     from app.db.session import Database
+    from app.services.apns_service import ApnsPttService
     from app.services.connection_manager import ConnectionManager
     from app.services.fcm_service import FcmService
     from app.services.location_service import LocationService
@@ -31,6 +32,7 @@ class Services:
     db: Database
     connections: ConnectionManager
     fcm: FcmService
+    apns: ApnsPttService
     ptt: PttService
     auth_limiter: SlidingWindowLimiter
     # Fábrica (não instância): `LocationService` carrega repositórios presos a uma

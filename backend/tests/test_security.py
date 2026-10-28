@@ -258,6 +258,11 @@ def test_production_accepts_hardened_config(settings_factory) -> None:
         debug=False,
         fcm_enabled=True,
         fcm_credentials_path="/opt/geoptt/secrets/serviceAccountKey.json",
+        apns_enabled=True,
+        apns_auth_key_path="/opt/geoptt/secrets/AuthKey_XXXXXXXX.p8",
+        apns_key_id="ABCDEF1234",
+        apns_team_id="TEAMID123",
+        apns_bundle_id="com.geoptt",
     )
     assert settings.is_production is True
 
