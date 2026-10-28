@@ -4,7 +4,9 @@
 > **aprovada explicitamente pelo usuário**. Cada fase termina com docs atualizados e
 > entrada em `docs/STATE_TRACEABILITY.md`.
 >
-> Última atualização: 2026-10-28 · Fase atual: **1 (concluída) → 2 (próxima)**
+> Última atualização: 2026-10-28 · Fase atual: **2 (em andamento)**
+>
+> Legenda: `[X]` concluído e verificado · `[~]` parcial · `[ ]` pendente
 
 ---
 
@@ -13,7 +15,7 @@
 | Fase | Escopo | Status | Bloqueia |
 |:---:|---|:---:|---|
 | **1** | Setup, `.gitignore`, regras, arquitetura, modelo de dados, rastreabilidade | ✅ `[X]` | tudo |
-| **2** | Backend FastAPI: Auth, Database, FCM, WebSocket Hub | ⬜ `[ ]` | 3, 4, 5, 6 |
+| **2** | Backend FastAPI: Auth, Database, FCM, WebSocket Hub | 🚧 `[~]` | 3, 4, 5, 6 |
 | **3** | Configuração nativa Android/iOS: permissões e background services | ⬜ `[ ]` | 4, 5 |
 | **4** | Frontend Flutter: GIS Tracker + OpenStreetMap | ⬜ `[ ]` | 6 |
 | **5** | Frontend Flutter: PTT Audio Engine (Opus) | ⬜ `[ ]` | 6 |
@@ -56,26 +58,30 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
 
 ### 2.1 Scaffold e configuração
 
-- [ ] Criar `backend/` com `pyproject.toml` (Python 3.12), `ruff`, `mypy --strict`,
+- [X] Criar `backend/` com `pyproject.toml` (Python 3.12), `ruff`, `mypy --strict`,
       `pytest`, `pytest-asyncio`, `httpx`.
-- [ ] `app/core/config.py` com `pydantic-settings` lendo `.env`
+- [X] `app/core/config.py` com `pydantic-settings` lendo `.env`
       (`DATABASE_URL`, `JWT_SECRET`, `JWT_ALG`, `ACCESS_TTL`, `REFRESH_TTL`,
       `FIREBASE_CREDENTIALS_PATH`, `CORS_ORIGINS`, `ENV`).
-- [ ] `.env.example` **sem valores reais**; confirmar que `.env` está ignorado.
-- [ ] `app/main.py` com factory, `lifespan` (pool DB, Firebase Admin), routers e
+- [X] `.env.example` **sem valores reais**; confirmar que `.env` está ignorado.
+- [X] `app/main.py` com factory, `lifespan` (pool DB, Firebase Admin), routers e
       `/health` (liveness) + `/health/ready` (DB + FCM).
-- [ ] Logging estruturado com redação de `token`, `password`, `lat`, `lng`,
+- [X] Logging estruturado com redação de `token`, `password`, `lat`, `lng`,
       `fcm_token`.
 
 ### 2.2 Banco de dados
 
-- [ ] Configurar SQLAlchemy 2.x async (`asyncpg`) + Alembic.
-- [ ] Migrations da Fase 1 do `DATA_MODEL.md` (users, circles, circle_members,
+- [X] Configurar SQLAlchemy 2.x async (`asyncpg`) + Alembic.
+- [X] Migrations da Fase 1 do `DATA_MODEL.md` (users, circles, circle_members,
       locations, location_history, ptt_channels, ptt_channel_members, refresh_tokens).
-- [ ] Habilitar PostGIS na migration inicial; fallback SQLite documentado para dev.
-- [ ] Repositories: `UserRepository`, `CircleRepository`, `LocationRepository`,
+- [X] Habilitar PostGIS na migration inicial; fallback SQLite documentado para dev.
+- [~] Repositories: `UserRepository`, `CircleRepository`, `LocationRepository`,
       `PttChannelRepository`, `TokenRepository`.
-- [ ] Teste: migrations sobem e descem (`alembic upgrade head` / `downgrade -1`).
+      → **feito:** `PttChannelRepository`. **pendente:** os outros 4.
+- [~] Teste: migrations sobem e descem (`alembic upgrade head` / `downgrade -1`).
+      → **feito:** renderização offline do SQL (`upgrade head --sql`) + drift guard
+      `tests/test_schema_metadata.py` (10 testes) comparando ORM × migration.
+      **pendente:** execução real do DDL (não há PostgreSQL/Docker no ambiente atual).
 
 ### 2.3 Autenticação
 
@@ -115,26 +121,37 @@ wake-up. Ainda **sem** áudio (áudio é Fase 5), mas com o hub e o contrato pro
 
 ### 2.7 WebSocket Hub
 
-- [ ] `ConnectionManager` (`dict[user_id, set[WebSocket]]`) com `connect`,
+- [X] `ConnectionManager` (`dict[user_id, set[WebSocket]]`) com `connect`,
       `disconnect`, `is_online`, `send_json`, `send_bytes`.
-- [ ] `GET /ws` — auth por `?token=` **ou** frame `AUTH` em ≤ 3 s (senão `4401`).
-- [ ] Heartbeat: `PING`/`PONG` com timeout de 60 s; limpeza de conexões mortas.
+      → implementado como `Connection` (writer task único + filas
+      controle/áudio com backpressure) + `ConnectionManager`.
+- [X] `GET /ws` — auth por `?token=` **ou** frame `AUTH` em ≤ 3 s (senão `4401`).
+- [X] Heartbeat: `PING`/`PONG` com timeout de 60 s; limpeza de conexões mortas.
 - [ ] `LOCATION_BATCH` via WS reaproveitando o mesmo service do REST.
 - [ ] Broadcast de `LOCATION_UPDATE` para membros do círculo.
-- [ ] `PTTService`: `PTT_DOWN`/`PTT_UP`, `asyncio.Lock` por canal, `PTT_BUSY`,
+- [X] `PTTService`: `PTT_DOWN`/`PTT_UP`, `asyncio.Lock` por canal, `PTT_BUSY`,
       timeout de 60 s, `PTT_SPEAKER_START/STOP`.
-- [ ] **Fallback FCM:** destinatário offline → `send_data_message(type="PTT_WAKEUP")`.
-- [ ] Teste de contrato do WS com `httpx`/`websockets`: auth inválida, busy,
+- [X] **Fallback FCM:** destinatário offline → `send_data_message(type="PTT_WAKEUP")`.
+      → `FcmService.send_wakeup` com `SlidingWindowLimiter`; disparado **uma vez por
+      `PTT_DOWN`** (não por chunk de áudio).
+- [~] Teste de contrato do WS com `httpx`/`websockets`: auth inválida, busy,
       fallback disparado, reconexão.
+      → **feito:** 100 testes unitários com `FakeWebSocket` (auth, busy, fallback,
+      backpressure, heartbeat). **pendente:** teste de integração com socket real.
 
 ### 2.8 Contrato
 
 - [ ] Gerar e versionar `docs/openapi.yaml`.
-- [ ] Documentar o envelope WS (`v`, `type`, `data`) em `docs/ARCHITECTURE.md` §7.
+- [X] Documentar o envelope WS (`v`, `type`, `data`) em `docs/ARCHITECTURE.md` §7.
 
 **Critério de saída:** `pytest` verde (≥ 80% nos services), `mypy --strict` sem erro,
 `openapi.yaml` gerado, e um cliente de teste (`wscat`/script) completando o ciclo
 login → WS → `PTT_DOWN` → fallback FCM simulado.
+
+**Progresso em 2026-10-28 (entrada #003):** base do backend e migration prontas —
+`ruff` limpo, `mypy --strict` limpo (31 arquivos), **100 testes** verdes. Falta o
+incremento de auth/círculos/localização REST, os 4 repositories restantes e o
+`openapi.yaml`.
 
 ---
 

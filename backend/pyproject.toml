@@ -1,0 +1,137 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "geoptt-backend"
+version = "0.1.0"
+description = "GeoPTT API — rastreamento em tempo real e Push-To-Talk sobre WebSocket"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "websockets>=13",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "geoalchemy2>=0.16",
+    "greenlet>=3.1",
+    "firebase-admin>=6.6",
+    "passlib[bcrypt]>=1.7.4",
+    # passlib 1.7.4 chama `bcrypt.hashpw` com >72 bytes no self-test do backend.
+    # bcrypt 5.x passou a levantar ValueError nesse caso, quebrando a inicialização
+    # do CryptContext. Ver STATE_TRACEABILITY #003 (candidato a ADR: pwdlib).
+    "bcrypt>=4.2,<5",
+    "pyjwt>=2.10",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "email-validator>=2.2",
+    "python-multipart>=0.0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-passlib>=1.7.7",
+    "aiosqlite>=0.20",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # comprehensions
+    "ASYNC",# async pitfalls
+    "S",    # bandit
+    "RET",  # return style
+    "SIM",  # simplify
+    "TID",  # tidy imports
+    "PL",   # pylint
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "PLR0913",  # muitos argumentos: aceitável em serviços de integração
+    "PLR0912",  # muitos branches: parsers de protocolo
+    "PLR0911",  # muitos returns: guard clauses são o padrão dos serviços
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+# O diretório local `alembic/` (migrations) faz o Ruff tratar o pacote
+# homônimo do PyPI como first-party. Declaramos explicitamente para manter
+# os imports agrupados corretamente.
+known-third-party = ["alembic"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",     # asserts são o propósito do arquivo
+    "S105",     # tokens fake
+    "S106",     # argumentos fake
+    "PLR2004",  # valores esperados literais são legíveis em testes
+    "PLC0415",  # imports locais delimitam o escopo do teste
+    "ASYNC109", # helper de polling declara `timeout` de propósito
+    "ASYNC110", # polling com sleep é intencional e limitado por timeout
+]
+"alembic/*" = ["TID252", "INP001"]
+"app/core/config.py" = ["S105"]               # default de dev documentado
+
+# ---------------------------------------------------------------------------
+# Mypy — tipagem estrita
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/versions/"]
+mypy_path = "."
+
+[[tool.mypy.overrides]]
+module = ["firebase_admin.*", "geoalchemy2.*", "passlib.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "alembic.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # firebase-admin 7.7 deprecou `Message.token` em favor de `fid`
+    # (Firebase Installation ID). Mantemos `token` até validar `fid` contra a
+    # API real do FCM — ver STATE_TRACEABILITY #003.
+    "ignore:Message.token is deprecated:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/models/*", "alembic/*"]

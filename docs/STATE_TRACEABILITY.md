@@ -12,12 +12,14 @@
 | Item | Valor |
 |---|---|
 | Fase concluída | **Fase 1 — Setup e Rastreabilidade** |
-| Fase em andamento | **nenhuma** (aguardando aprovação para Fase 2) |
+| Fase em andamento | **Fase 2 — Backend FastAPI** (base + migration prontas; auth/REST pendentes) |
 | Última atualização | 2026-10-28 |
 | Stack | Flutter · FastAPI (Python 3.12) · PostgreSQL/PostGIS · SQLite · WebSockets · FCM · OSM/`flutter_map` · `just_audio` · Opus |
 | Infra de produção | VPS Ubuntu `163.176.229.20`, usuário `ubuntu`, acesso por chave SSH |
-| Código de produção | **zero linhas** (por decisão de processo) |
-| Repositório Git | **inicializado** em `main`, commit `912c390` |
+| Código de produção | `backend/` — 31 módulos, 42 arquivos formatados, **100 testes** |
+| Qualidade | `ruff check` ✅ · `ruff format --check` ✅ · `mypy --strict` ✅ (31 arquivos) |
+| Migration | `0001_initial` — 9 tabelas, PostGIS + pgcrypto, validada em modo **offline** |
+| Repositório Git | **inicializado** em `main`; Fase 1 em `e1c1379`, Fase 2 commitada (entrada #003) |
 | Segredos no repositório | **nenhum** (verificado no index e no histórico) |
 | Chave SSH | `C:\Nexo\ssh-key-2026-09-24.key` — presente no disco, **ignorada pelo Git** |
 
@@ -198,6 +200,157 @@ docs/STATE_TRACEABILITY.md      (alterado — snapshot + esta entrada)
 
 ```
 912c390  docs: bootstrap fase 1 - arquitetura, modelo de dados, roadmap e protecao de credenciais
+```
+
+---
+
+### 2026-10-28 — Entrada #003 — Base do backend FastAPI e migration PostGIS
+
+**Contexto:** Fase 2 autorizada pelo usuário com escopo explícito: gerar a base do
+backend (config, app factory, hub WebSocket, fallback FCM), a migration inicial com
+PostGIS, os testes e a atualização da rastreabilidade. Fechamento pedido pelo usuário:
+*"Me avise quando a base do FastAPI e a migration estiverem prontas."*
+
+**O que foi feito**
+
+1. **`backend/pyproject.toml`** — Python 3.12, deps de runtime (`fastapi`,
+   `uvicorn[standard]`, `websockets`, `sqlalchemy[asyncio]`, `asyncpg`, `alembic`,
+   `geoalchemy2`, `firebase-admin`, `passlib[bcrypt]`, `bcrypt`, `pyjwt`,
+   `pydantic-settings`) e de dev (`pytest`, `pytest-asyncio`, `httpx`, `aiosqlite`,
+   `ruff`, `mypy`, `types-passlib`). Configuração de `ruff` (line-length 100,
+   E/W/F/I/N/UP/B/C4/ASYNC/S/RET/SIM/TID/PL/RUF), `mypy --strict` e `pytest`.
+2. **`app/core/config.py`** — `Settings` com `pydantic-settings`, normalização de
+   `DATABASE_URL` (`postgres://` → `postgresql+asyncpg://`), `JWT_SECRET` em
+   `SecretStr`, validadores que **recusam** subir `ENV=production` com segredo de dev,
+   `DEBUG=true` ou `FCM_ENABLED=true` sem credenciais; `masked_database_url`.
+3. **`app/core/logging.py`** — `JsonFormatter` + `RedactionFilter` com regexes para
+   JWT, pares `token=/password=/fcm_token=` e coordenadas com 5+ casas decimais.
+4. **`app/core/security.py`** — bcrypt via `passlib`, JWT (`create_token`,
+   `decode_token`, `TokenType` ACCESS/REFRESH), `hash_token` (SHA-256) para refresh
+   tokens persistidos, `generate_opaque_token`.
+5. **`app/db/base.py` / `app/db/session.py`** — `Base` com *naming convention*
+   explícita (`pk_`, `fk_`, `ux_`, `ix_`, `ck_`) e `Database` com engine async.
+6. **`app/models/`** — 9 tabelas 2.0-style (`Mapped[]` + `mapped_column()`):
+   `users`, `circles`, `circle_members`, `locations`, `location_history`,
+   `ptt_channels`, `ptt_channel_members`, `ptt_sessions`, `refresh_tokens`.
+   Colunas geoespaciais em `GEOGRAPHY(POINT, 4326)` com índice GiST.
+7. **`alembic/versions/0001_initial_schema.py`** — migration inicial **escrita à mão**
+   (não autogerada): `CREATE EXTENSION IF NOT EXISTS postgis` + `pgcrypto`, 3 enums,
+   9 tabelas, índice parcial único `ux_circle_single_owner`, `ux_history_user_seq`
+   (idempotência de reenvio) e 2 índices GiST. `upgrade()` levanta `RuntimeError` se o
+   dialeto não for `postgresql`; `downgrade()` **não** remove as extensões.
+8. **`app/services/connection_manager.py`** — `Connection` com **writer task única**
+   (o Starlette não suporta `send` concorrente no mesmo socket), fila de controle
+   (cheia → fecha a conexão, nunca perde mensagem) e fila de áudio limitada com
+   **drop-oldest**. `ConnectionManager` com presença por usuário, múltiplos devices,
+   `send_to_user`, `broadcast`, `send_audio_to_user`, `stats` e `close_all`.
+9. **`app/services/ptt_service.py`** — half-duplex por canal com lock, hierarquia de
+   erros (`PttBusyError`, `PttNotMemberError`, `PttCannotSpeakError`,
+   `PttChannelNotFoundError`, `PttChannelInactiveError`, `PttNotSpeakingError`),
+   watchdog de locutor e `PTT_SPEAKER_START/STOP`.
+10. **`app/services/fcm_service.py`** — `FcmService` (firebase-admin),
+    `SlidingWindowLimiter` por usuário, `build_message` **data-only** com
+    `android.priority="high"`, `apns-push-type=background`, `apns-priority=5`,
+    `content-available: 1`; detecção de token `UNREGISTERED` e `mask_token` para log.
+11. **`app/api/ws/ptt.py`** — `/ws` com auth por `?token=` ou frame `AUTH` em até
+    `WS_AUTH_TIMEOUT_SECONDS` (3 s), close `4401`/`4402` **após** `accept` (para o
+    cliente ler o código), heartbeat `4408`, dispatch de `PING`/`PTT_DOWN`/`PTT_UP`,
+    frames binários encaminhados como áudio do locutor.
+12. **`app/main.py`** — `create_app()` com `lifespan` moderno (DB → FCM → serviços em
+    `app.state`), CORS, routers `/health` e `/health/ready`, `/docs` desabilitado em
+    produção.
+13. **Testes (100)** — `test_connection_manager.py` (backpressure, fila de controle,
+    concorrência), `test_fcm_service.py` (payload, rate limit, UNREGISTERED, erros
+    transitórios), `test_security.py` (bcrypt, JWT, redação, validadores de produção),
+    `test_ws_auth.py` (handshake, timeouts, envelope), `test_schema_metadata.py`
+    (**drift guard** ORM × migration).
+
+**Decisões técnicas tomadas**
+
+| # | Decisão | Justificativa |
+|---|---|---|
+| D15 | **Sem** `sqlalchemy.ext.mypy.plugin` | SQLAlchemy 2.1 removeu o plugin. Modelos 2.0-style (`Mapped[]`) passam em `mypy --strict` sem ele. |
+| D16 | `bcrypt>=4.2,<5` (pin de teto) | `passlib` 1.7.4 faz self-test do backend com senha > 72 bytes; `bcrypt` 5.x levanta `ValueError` e **quebra a inicialização** do `CryptContext`. 4.3.0 validado. |
+| D17 | `PyJWT` em vez de `python-jose` | manutenção ativa e API menor; `python-jose` está estagnado. |
+| D18 | FCM wake-up **1× por `PTT_DOWN`** | disparar por chunk de áudio inundaria o FCM e estouraria quota/latência. |
+| D19 | Estado de canal PTT **em memória** | MVP single-node; Redis/pub-sub exige ADR-001 antes de escalar horizontalmente. |
+| D20 | `Connection` com writer task + filas | `WebSocket.send_*` concorrente corrompe o frame no Starlette; a fila de áudio descarta o frame mais antigo (latência > integridade para voz). |
+| D21 | Migration escrita à mão | o autogenerate não produz `CREATE EXTENSION`, `geography(POINT,4326)` nem índice parcial único de forma confiável. |
+| D22 | `Message.token` mantido (deprecado em firebase-admin 7.7) | `fid` (Firebase Installation ID) precisa ser validado contra a API real do FCM antes da troca; warning filtrado no pytest. |
+| D23 | `known-third-party = ["alembic"]` no Ruff | o diretório local `alembic/` fazia o isort tratar o pacote do PyPI como first-party, gerando agrupamento de imports incorreto. |
+| D24 | Constraint names de `CheckConstraint` **sem** prefixo na migration | a naming convention `ck_%(constraint_name)s` re-prefixa; passar `ck_locations_lat_range` produzia `ck_locations_ck_locations_lat_range`. |
+| D25 | UUID PKs com `server_default=text("gen_random_uuid()")` | paridade com o DDL aplicado; sem isso o `autogenerate` proporia `DROP DEFAULT` espúrio. |
+| D26 | `UniqueConstraint(circle_id, user_id)` removida de `circle_members` | a PK composta já garante unicidade; a constraint extra criaria índice redundante. |
+
+**Verificações executadas**
+
+- [x] `ruff check .` → **All checks passed!**
+- [x] `ruff format --check .` → **42 files already formatted**
+- [x] `mypy app` → **Success: no issues found in 31 source files**
+- [x] `pytest` → **100 passed in 3.72s**
+- [x] `alembic upgrade head --sql` (offline, sem PostgreSQL) → 166 linhas: PostGIS +
+      pgcrypto, 3 enums, 9 tabelas, `geography(POINT,4326)` ×2, `USING gist (geom)` ×2
+- [x] `tests/test_schema_metadata.py` → nomes de constraints e índices do ORM **idênticos**
+      aos da migration (bidirecional); 9 tabelas mapeadas; `gen_random_uuid()` presente
+- [x] `git check-ignore -v` → `backend/.env`, `backend/.venv`, `serviceAccountKey.json`,
+      `__pycache__` todos ignorados; `git add -n backend/.env.example` → **adicionável**
+- [x] `migration_preview.sql` (artefato temporário da validação) removido
+- [x] Nenhum `.env`, `.key`, `.pem` ou credencial no index
+
+**Bugs conhecidos**
+
+- **`passlib` 1.7.4 sem manutenção.** Loga `(trapped) error reading bcrypt version`
+  na primeira utilização (não afeta o hash). Candidato a ADR: substituir por `pwdlib`.
+- **`Message.token` deprecado** no firebase-admin 7.7 em favor de `fid`. Migração
+  pendente de validação contra a API real.
+- **Migration não executada de verdade.** O ambiente atual não tem PostgreSQL, Docker
+  nem `psql`. A validação foi *offline* (`--sql`) + drift guard. **O DDL real precisa
+  rodar no VPS ou no ambiente do usuário** antes de considerar 2.2 fechada.
+- **`LOCATION_BATCH`/`LOCATION_UPDATE`** existem apenas como enum; o handler ainda não
+  os processa (depende do `LocationRepository`, que não existe).
+- **4 de 5 repositories pendentes** (`User`, `Circle`, `Location`, `Token`).
+- **Risco residual R6.1** (chave SSH dentro da árvore do projeto) permanece; mitigação
+  por dupla camada de ignore + varredura pré-commit.
+
+**Próximo passo exato (incremento seguinte da Fase 2)**
+
+> Criar os routers REST e os repositories que faltam:
+> `app/repositories/{user,circle,location,token}_repository.py`,
+> `app/api/routers/{auth,circles,location,users}.py` com
+> `POST /auth/register|login|refresh|logout`, `GET|PATCH /users/me`,
+> `POST|DELETE /users/me/fcm-token`, `POST /circles`, `POST /circles/join`,
+> `GET /circles`, `GET /circles/{id}/members`,
+> `DELETE /circles/{id}/members/{user_id}` e `POST /location/batch` (até 50 pontos,
+> `ON CONFLICT DO NOTHING` por `client_seq`). Fechar com testes de auth (registro
+> duplicado, senha fraca, refresh reutilizado, 403 cross-circle) e gerar
+> `docs/openapi.yaml`.
+
+**Arquivos criados/alterados nesta entrada**
+
+```text
+backend/pyproject.toml
+backend/README.md
+backend/.env.example
+backend/alembic.ini
+backend/alembic/env.py
+backend/alembic/script.py.mako
+backend/alembic/versions/0001_initial_schema.py
+backend/app/__init__.py
+backend/app/main.py
+backend/app/core/{__init__,config,container,logging,security}.py
+backend/app/db/{__init__,base,session}.py
+backend/app/models/{__init__,enums,user,circle,location,ptt,token}.py
+backend/app/schemas/{__init__,ws}.py
+backend/app/services/{__init__,connection_manager,fcm_service,ptt_service}.py
+backend/app/repositories/{__init__,ptt_channel_repository}.py
+backend/app/api/{__init__,deps}.py
+backend/app/api/routers/{__init__,health}.py
+backend/app/api/ws/{__init__,ptt}.py
+backend/tests/{__init__,conftest,helpers}.py
+backend/tests/{test_connection_manager,test_fcm_service,test_security,
+                test_ws_auth,test_schema_metadata}.py
+docs/TASKS.md                    (alterado — Fase 2 parcialmente marcada)
+docs/STATE_TRACEABILITY.md       (alterado — snapshot + esta entrada)
 ```
 
 ---
