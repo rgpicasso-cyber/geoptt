@@ -233,18 +233,18 @@ wake-up após swipe-away em pelo menos 1 Android e 1 iOS.
 
 - [X] Scaffold `app/` + `analysis_options.yaml` com `strict-casts`,
       `strict-inference`, `strict-raw-types`. *(antecipado na Fase 3)*
-- [ ] `core/` : Dio client, `WsClient` (backoff exponencial + jitter, heartbeat),
+- [X] `core/` : Dio client, `WsClient` (backoff exponencial + jitter, heartbeat),
       `SecureStorage` (tokens), router, tema.
-- [ ] Feature `auth`: login, refresh automático, logout.
-- [ ] Feature `map`: `flutter_map` + tiles OSM (com `userAgentPackageName` e cache),
+- [X] Feature `auth`: login, refresh automático, logout.
+- [X] Feature `map`: `flutter_map` + tiles OSM (com `userAgentPackageName` e cache),
       markers com avatar, bateria e "há X min".
-- [ ] Feature `location`: `geolocator` + smart ping (10 s / 25 m em movimento,
-      120 s parado), precisão adaptativa.
-- [ ] Fila offline em SQLite (Drift/sqflite) + drenagem em lote no reconnect.
-- [ ] Permissões de localização em runtime com UI explicativa.
-- [ ] Providers Riverpod: `locationStreamProvider`, `circleMembersProvider`,
+- [X] Feature `location`: `geolocator` + smart ping (Δ > 10 m ou heartbeat > 2 min),
+      precisão adaptativa.
+- [X] Fila offline em SQLite (Drift) + drenagem em lote no reconnect.
+- [X] Permissões de localização em runtime com UI explicativa.
+- [X] Providers Riverpod: `locationStreamProvider`, `circleMembersProvider`,
       `wsConnectionProvider`.
-- [ ] Testes: widget test do mapa com dados fake; unit test do smart ping e do
+- [X] Testes: widget test do mapa com dados fake; unit test do smart ping e do
       backoff.
 
 **Critério de saída:** dois emuladores/dispositivos veem a posição um do outro no mapa

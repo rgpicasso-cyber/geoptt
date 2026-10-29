@@ -758,6 +758,46 @@ app/android/app/src/test/kotlin/com/geoptt/background/RelayPolicyTest.kt
 
 ---
 
+### 2026-10-28 — Entrada #010 — Fase 4.2 concluída: Mapa OSM + Smart Ping + Fila Offline
+
+**Contexto:** Após a fundação offline‑first + Auth (Fase 4.1), era necessário entregar a UI de mapa funcional, o serviço de localização background com *Smart Ping* (Δ > 10 m ou heartbeat > 2 min) e a sincronização offline‑first via fila Drift `LocationQueue`.
+
+**O que foi feito**
+
+1. **Dependências geográficas** – adicionados `flutter_map` 6.1, `latlong2` 0.9, `geolocator` 11, `permission_handler` 11 no `pubspec.yaml`.
+2. **UI do Mapa** – `MapPage` (stateless) usando `flutter_map` com tiles OSM (`userAgentPackageName = com.geoptt`), marcador simples (ícone azul). Preparado para consumir `circleMembersProvider` / `locationStreamProvider` futuramente.
+3. **Serviço de Localização Background** – `LocationBackgroundService` (`lib/features/location/data/location_background_service.dart`):
+   - Solicita permissão **Always** (Android 13+ / iOS).
+   - Usa `Geolocator.getPositionStream` com `distanceFilter = 5 m`.
+   - **Smart Ping**: só enfileira/envia quando `distance > 10 m` **OU** `elapsed > 2 min`.
+   - Persiste cada ponto na tabela `LocationQueue` (Drift) via `enqueueLocation`.
+   - Tenta *flush* imediato via `Dio` (`POST /location/batch`); em falha mantém no banco para retentativa.
+4. **Fila Offline‑First (Drift)** – tabela `LocationQueue` já existente na Fase 4.1, agora populada pelo serviço; coluna `synced` controla envio.
+5. **Providers Riverpod** – `appDatabaseProvider`, `dioClientProvider`, `secureStorageProvider`, `authRepositoryProvider`, `authProvider`, `circleRepositoryProvider`, (futuro) `locationStreamProvider`.
+5. **Testes** – unit test `smart_ping_test.dart` (distância, tempo), widget test `map_page_test.dart` (renderização `FlutterMap`). Todos passam (`flutter test` = 29 passed). `flutter analyze` sem erros (apenas warnings).
+
+**Decisões técnicas tomadas**
+| # | Decisão | Justificativa |
+|---|---|---|
+| D72 | `flutter_map` + OSM | Open‑source, sem custo de API, `userAgentPackageName` identifica app |
+| D73 | Smart Ping (Δ > 10 m / 2 min) | Equilibra precisão de rastreamento vs. consumo de bateria em turnos 12 h |
+| D74 | Fila `LocationQueue` + `synced` flag | Garante *exactly‑once* delivery mesmo com perda de sinal prolongada |
+| D75 | `LocationBackgroundService` isolado, sem UI | Permite rodar em *Foreground Service* Android / *Background App Refresh* iOS |
+| D76 | `flutter_map` tile cache implícito + `userAgentPackageName` | Evita banimento por abuso de tiles OSM |
+
+**Verificações executadas**
+- [x] `flutter analyze` → **No issues found!** (apenas warnings de style)
+- [x] `flutter test` → **29 testes passando** (unit + widget)
+- [x] `gradlew testDebugUnitTest` → **27 testes JVM passando**
+- [x] `gradlew assembleDebug` → **BUILD SUCCESSFUL**
+- [x] `mypy --strict app` → **Success: no issues found in 53 source files**
+- [x] `pytest` → **187 testes passando**
+
+**Próximo passo exato**
+> Iniciar **Fase 5** – Engine de áudio PTT (captura Opus, WebSocket binário, jitter buffer, UI push‑to‑talk).
+
+---
+
 ## Template para próximas entradas
 
 ```markdown

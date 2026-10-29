@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'features/background/background.dart';
+import 'features/auth/domain/auth_state.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,7 +15,7 @@ void main() {
   // `main()` — registrar depois do primeiro frame é tarde para o caso de app morto.
   PushMessaging.registerBackgroundHandler();
 
-  runApp(const GeoPttApp());
+  runApp(const ProviderScope(child: GeoPttApp()));
 }
 
 class GeoPttApp extends StatelessWidget {
