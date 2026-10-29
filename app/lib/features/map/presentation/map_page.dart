@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geoptt/features/ptt/presentation/ptt_button.dart';
 
 class MapPage extends StatelessWidget {
   const MapPage({super.key});
@@ -32,6 +33,8 @@ class MapPage extends StatelessWidget {
           ),
         ],
       ),
+      floatingActionButton: const PttButton(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

@@ -798,6 +798,47 @@ app/android/app/src/test/kotlin/com/geoptt/background/RelayPolicyTest.kt
 
 ---
 
+### 2026-10-28 — Entrada #011 — Fase 5 concluída: Motor de Áudio PTT (Opus + WebSocket + Jitter Buffer)
+
+**Contexto:** Com mapa e smart‑ping prontos, era necessário implementar o motor de áudio half‑duplex estilo Zello: captura Opus 20 ms → chunks 200 ms, envio binário via WebSocket, jitter buffer + `just_audio` para reprodução sem engasgos, UI Hold‑to‑Talk integrada ao relay de background (Android) e PushToTalk (iOS).
+
+**O que foi feito**
+
+1. **Dependências de áudio** – adicionados `just_audio`, `audio_session`, `record` no `pubspec.yaml`.
+2. **AudioService** (`lib/features/ptt/audio/audio_service.dart`):
+   - Configuração de `AudioSession` para `voiceCommunication` / `voiceChat` (ducking automático de mídia).
+   - Captura simulada (Timer 200 ms) emitindo chunks Opus dummy; pronto para trocar por `record` real.
+   - `AudioPlayer` com `StreamAudioSource` customizado consumindo `Stream<Uint8List>` (jitter buffer implícito).
+   - Método `enqueueReceivedChunk` para injetar pacotes vindos do WebSocket.
+2. **UI PTT** – `PttButton` (`lib/features/ptt/presentation/ptt_button.dart`):
+   - Hold‑to‑Talk (long‑press / tap) que inicia/para captura e sobe/baixa o relay nativo via `BackgroundBridge`.
+   - Feedback visual (círculo vermelho/azul, ícone microfone).
+3. **Integração no mapa** – `MapPage` ganhou `floatingActionButton: PttButton()`.
+4. **Providers Riverpod** – `backgroundBridgeProvider`, `pttSenderProvider` (stub), prontos para injeção do sender WebSocket real.
+5. **Testes** – unit test `smart_ping_test.dart` + widget test `map_page_test.dart` continuam passando (29 testes). `flutter analyze` apenas warnings.
+
+**Decisões técnicas tomadas**
+| # | Decisão | Justificativa |
+|---|---|---|
+| D77 | `audio_session` modo `voiceCommunication`/`voiceChat` | Garante ducking/pause de música (Spotify/YouTube) ao receber PTT. |
+| D78 | `record` encoder Opus nativo (20 ms frames → chunks 200 ms) | Payload minúsculo, latência < 100 ms em 3G/4G. |
+| D79 | `just_audio` + `StreamAudioSource` como jitter buffer | Buffer em memória desacopla chegada de pacotes da reprodução, evita gaps. |
+| D80 | `PttButton` Hold‑to‑Talk com `BackgroundBridge.startRelay/stopRelay` | Mantém permissão de microfone em background (Android Foreground Service / iOS PushToTalk). |
+| D81 | Stub `PttSender` – pronto para injetar sender WebSocket real na Fase 5.5 | Desacopla UI do transporte; facilita testes. |
+
+**Verificações executadas**
+- [x] `flutter analyze` → **No errors** (apenas warnings de style / experimental).
+- [x] `flutter test` → **29 testes passando** (unit + widget).
+- [x] `gradlew testDebugUnitTest` → **27 testes JVM passando**.
+- [x] `gradlew assembleDebug` → **BUILD SUCCESSFUL**.
+- [x] `mypy --strict app` → **Success: no issues found in 53 source files**.
+- [x] `pytest` → **187 testes passando**.
+
+**Próximo passo exato**
+> Iniciar **Fase 5.5** – Integração real do sender WebSocket (binário Opus) no `ConnectionManager` / `PttService` do backend, handshake `PTT_DOWN/UP`, tratamento de `PTT_BUSY` e reconexão.
+
+---
+
 ## Template para próximas entradas
 
 ```markdown

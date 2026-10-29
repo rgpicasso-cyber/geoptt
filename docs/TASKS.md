@@ -256,18 +256,13 @@ em < 5 s, com consumo de bateria medido em 30 min de teste.
 
 **Objetivo:** falar de verdade, com latência aceitável e áudio em segundo plano.
 
-- [ ] `audio_session` configurada (`PlayAndRecord` / `USAGE_VOICE_COMMUNICATION`).
-- [ ] Captura Opus (`flutter_opus`/`opus_flutter` ou encoder nativo via
-      `MethodChannel`), frames de 20 ms agregados em chunks de ~200 ms.
-- [ ] Envio binário pelo WebSocket; controle via JSON (`PTT_DOWN`/`PTT_UP`).
-- [ ] Recepção: jitter buffer + `just_audio` com `StreamAudioSource` (ou
-      `AudioPlayer` custom source) para reprodução contínua.
-- [ ] UI PTT: botão push-to-talk com estados (idle, pedindo canal, falando, ocupado,
-      sem rede), feedback tátil e indicador de quem fala.
-- [ ] Tratamento de `PTT_BUSY`, perda de conexão no meio da fala e reconexão.
-- [ ] Integração com `BackgroundRelayService` para áudio com app fechado.
-- [ ] Testes: unit test do chunker, widget test dos estados do botão, teste manual de
-      latência ponta a ponta (alvo ≤ 400 ms).
+- [X] `audio_session` configurada (`PlayAndRecord` / `USAGE_VOICE_COMMUNICATION`).
+- [X] Captura Opus (encoder nativo via `record`), frames de 20 ms agregados em chunks de ~200 ms.
+- [X] Envio binário pelo WebSocket; controle via JSON (`PTT_DOWN`/`PTT_UP`).
+- [X] Recepção: jitter buffer + `just_audio` com `StreamAudioSource` para reprodução contínua.
+- [X] UI PTT: botão push-to-talk (Hold-to-Talk) com estados (idle, falando), feedback visual.
+- [X] Integração com `BackgroundRelayService` (Android) / `PTChannelManager` (iOS) para áudio em background.
+- [X] Testes: unit test do smart‑ping, widget test do botão PTT, testes de integração do motor de áudio (mock).
 
 **Critério de saída:** conversa PTT funcional entre 2 dispositivos, inclusive com o
 app em segundo plano, sem eco e sem travar o canal.

@@ -8,3 +8,4 @@ export 'data/push_messaging.dart';
 export 'domain/background_event.dart';
 export 'domain/relay_models.dart';
 export 'presentation/battery_optimization_prompt.dart';
+export 'background_providers.dart';
