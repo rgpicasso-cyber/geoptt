@@ -292,6 +292,18 @@ monitoramento básico e rollback documentado.
 
 ---
 
+## Fase 6 — Deploy na VPS + Testes Integrados (Preparado)
+
+**Objetivo:** material de deploy pronto para execução na VPS `163.176.229.20`.
+
+- [X] `deploy/setup_db.sh` – PostgreSQL 16 + PostGIS 3, role/banco, `alembic upgrade head`.
+- [X] `deploy/geoptt.service` – systemd (gunicorn + uvicorn workers, `Restart=always`, env file).
+- [X] `deploy/nginx_geoptt.conf` – Nginx com bloco `/ws` (Upgrade/Connection), TLS via Certbot, timeouts longos.
+- [X] `docs/DEPLOY_GUIDE.md` – guia passo a passo (clone, venv, `.env` 600, secrets 400, DB, systemd, Nginx, Certbot, smoke‑test, rollback).
+- [X] Checklist de secrets (FCM `serviceAccountKey.json`, APNs `.p8` chmod 400) documentado.
+
+---
+
 ## Backlog pós-MVP (não iniciar sem aprovação)
 
 - [ ] Multi-dispositivo por usuário (`user_devices`).

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geoptt/features/ptt/audio/audio_service.dart';
 import 'package:geoptt/features/background/background.dart';
+import 'package:geoptt/features/ptt/network/ptt_ws_client.dart';
+import 'package:geoptt/features/ptt/network/ptt_providers.dart';
 
-/// Botão Hold‑to‑Talk que inicia/para captura e envia chunks via WebSocket.
+/// Botão Hold‑to‑Talk que inicia/para captura e envia chunks via WebSocket real.
 class PttButton extends ConsumerStatefulWidget {
   const PttButton({super.key});
 
@@ -15,12 +17,11 @@ class PttButton extends ConsumerStatefulWidget {
 
 class _PttButtonState extends ConsumerState<PttButton> {
   bool _pressed = false;
-  StreamSubscription<Uint8List>? _sendSub;
+  PttWsClient? _wsClient;
 
   @override
   void initState() {
     super.initState();
-    // Inicializa audio session
     AudioService.instance.init();
   }
 
@@ -31,8 +32,18 @@ class _PttButtonState extends ConsumerState<PttButton> {
     // Sobe relay (Android) / canal PTT (iOS)
     final bridge = ref.read(backgroundBridgeProvider);
     await bridge.startRelay();
-    // Escuta chunks capturados e envia via WebSocket (via pttProvider)
-    _listenAndSend();
+
+    // Conecta WebSocket e envia PTT_DOWN
+    _wsClient = ref.read(pttWsClientProvider);
+    _wsClient!.onSpeakingChanged = (speaking) {
+      // Atualiza UI se necessário
+    };
+    _wsClient!.onError = (msg) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    };
+    await _wsClient!.pressDown();
   }
 
   void _onPressUp() async {
@@ -40,25 +51,13 @@ class _PttButtonState extends ConsumerState<PttButton> {
     await AudioService.instance.stopCapture();
     final bridge = ref.read(backgroundBridgeProvider);
     await bridge.stopRelay();
-    _cancelSend();
-  }
-
-  void _listenAndSend() {
-    final audio = AudioService.instance;
-    _sendSub = audio.capturedChunks.listen((chunk) {
-      // Envia chunk binário via WebSocket (implementado no pttProvider)
-      ref.read(pttSenderProvider).sendAudioChunk(chunk);
-    });
-  }
-
-  void _cancelSend() {
-    _sendSub?.cancel();
-    _sendSub = null;
+    await _wsClient?.pressUp();
+    _wsClient = null;
   }
 
   @override
   void dispose() {
-    _cancelSend();
+    _wsClient?.dispose();
     super.dispose();
   }
 
@@ -92,21 +91,7 @@ class _PttButtonState extends ConsumerState<PttButton> {
             color: Colors.white,
           ),
         ),
-      ),
-    );
-  }
-}
-
-// Provider dummy para envio; implementação real no pttProvider (WS)
-final pttSenderProvider = Provider<PttSender>((ref) => _DummyPttSender());
-
-class PttSender {
-  void sendAudioChunk(Uint8List chunk) {}
-}
-
-class _DummyPttSender implements PttSender {
-  @override
-  void sendAudioChunk(Uint8List chunk) {
-    // TODO: integrar com ConnectionManager do backend via WebSocket
+      );
+    }
   }
 }

@@ -1,0 +1,23 @@
+[Unit]
+Description=GeoPTT FastAPI application
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=notify
+User=geoptt
+Group=geoptt
+WorkingDirectory=/opt/geoptt
+EnvironmentFile=/opt/geoptt/.env
+ExecStart=/opt/geoptt/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 app.main:app
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=geoptt
+
+[Install]
+WantedBy=multi-user.target

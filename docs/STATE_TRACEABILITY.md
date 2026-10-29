@@ -839,6 +839,56 @@ app/android/app/src/test/kotlin/com/geoptt/background/RelayPolicyTest.kt
 
 ---
 
+---
+
+### 2026-10-28 — Entrada #012 — Fase 5.5 concluída: Integração WebSocket binária PTT + Wake‑up + Back‑off
+
+**Contexto** – Motor de áudio pronto (Fase 5). Faltava ligar o cliente ao servidor via WebSocket binário, implementar handshake `PTT_DOWN/UP`, roteamento de frames Opus, gatilho de wake‑up (FCM/APNs) para membros offline e resiliência de reconexão exponencial.
+
+**O que foi feito**
+1. **Cliente WebSocket** – `PttWsClient` (`lib/features/ptt/network/ptt_ws_client.dart`):
+   - Handshake `PTT_DOWN` (com `channel_id`), resposta `PTT_BUSY` ou aprovação.
+   - Envio de chunks binários Opus; recepção via `StreamAudioSource` (jitter buffer).
+   - Tratamento de `PTT_BUSY`/`ERROR`; callback `onError` para UI.
+2. **Provider Riverpod** – `pttWsClientProvider` (auto‑dispose) lendo token do `SecureStorage`.
+3. **UI** – `PttButton` usa `pressDown/pressUp` do cliente; integra `BackgroundBridge.startRelay/stopRelay`.
+4. **Backend** – `ptt_socket` já tratava `PTT_DOWN/UP` e frames binários; `PttService.start_talking` dispara `_wake_offline_members` (FCM/APNs) para membros offline.
+5. **Resiliência** – Reconexão exponencial (1 s → 2 s → 4 s … máx 30 s, 10 tentativas).
+6. **Dependência** – `web_socket_channel: ^2.4.0` adicionada.
+
+**Decisões técnicas**
+| # | Decisão | Justificativa |
+|---|---|---|
+| D82 | Cliente WS dedicado (`PttWsClient`) separado do `ConnectionManager` genérico | Isola lógica PTT (binário + controle) e permite back‑off próprio. |
+| D83 | Reconexão exponencial com jitter | Evita thundering herd quando muitos clientes caem simultaneamente. |
+| D84 | Wake‑up imediato no `PTT_DOWN` aprovado | Garante que dispositivo offline acorde antes do primeiro chunk Opus chegar. |
+| D85 | `PTT_BUSY` devolvido pelo servidor antes de qualquer frame binário | UI pode emitir som de “ocupado” sem iniciar captura. |
+| D86 | `web_socket_channel` v2 (estável) | API madura, suporta streams binários e reconexão manual. |
+
+**Verificações**
+- `flutter analyze` → 0 errors (warnings apenas).
+- `flutter test` → 31 testes passando.
+- Backend `mypy --strict` OK, `pytest` 187 passed.
+- `gradlew testDebugUnitTest` 27 passed, `assembleDebug` OK.
+
+---
+
+### 2026-10-28 — Entrada #013 — Fase 6 preparada: Infra‑as‑Code (DB, Systemd, Nginx, Certbot, Secrets)
+
+**Contexto** – Código pronto, testes verdes. Necessário material de deploy para a VPS Ubuntu `163.176.229.20`.
+
+**Artefatos criados**
+1. `deploy/setup_db.sh` – instala PostgreSQL 16 + PostGIS 3, cria role/banco, roda `alembic upgrade head`.
+2. `deploy/geoptt.service` – systemd unit (gunicorn + uvicorn workers, restart always, env file).
+3. `deploy/nginx_geoptt.conf` – Nginx com bloco `/ws` contendo `Upgrade`/`Connection` headers, TLS via Certbot, timeouts longos para PTT.
+4. `docs/DEPLOY_GUIDE.md` – passo a passo: clone, venv, `.env` (600), secrets (`serviceAccountKey.json`, APNs `.p8` chmod 400), DB, systemd, Nginx, Certbot, smoke‑test, rollback.
+5. Atualizações em `TASKS.md` (Fase 6 `[X]` pré‑deploy) e `STATE_TRACEABILITY.md`.
+
+**Próximo passo**
+> Executar o guia na VPS, validar health‑check, WS `/ws` e PTT real entre dois dispositivos 4G.
+
+---
+
 ## Template para próximas entradas
 
 ```markdown

@@ -64,6 +64,7 @@ dependencies:
   just_audio: ^0.9.36
   audio_session: ^0.1.18
   record: ^5.0.4
+  web_socket_channel: ^2.4.0
   # Opus encoding is handled by `record` (uses platform Opus encoder)
 
 dev_dependencies:
