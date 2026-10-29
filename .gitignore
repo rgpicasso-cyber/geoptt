@@ -1,212 +1,37 @@
-# ==============================================================================
-# GeoPTT — .gitignore
-# Regra de ouro: NENHUMA credencial, chave privada ou token entra no Git.
-# Se um arquivo sensível já foi commitado, ele DEVE ser rotacionado/revogado.
-# ==============================================================================
+# Deploy scripts temporários
+deploy_step*.sh
+gen_deploy_key.sh
 
-# ------------------------------------------------------------------------------
-# 1. SEGREDOS E CHAVES PRIVADAS (BLOQUEIO CRÍTICO)
-# ------------------------------------------------------------------------------
-.env
-.env.*
-!.env.example
-*.env
-*.pem
-*.key
-*.rsa
-*.ppk
-*.p12
-*.pfx
-*.jks
-*.keystore
-*.mobileprovision
-id_rsa
-id_rsa.*
-id_ed25519
-id_ed25519.*
-id_ecdsa
-id_ecdsa.*
-known_hosts
-authorized_keys
-
-# Chave SSH da VPS de produção (NUNCA commitar)
-ssh-key-2026-09-24.key
-ssh-key-*.key
-*.ssh-key
-*_rsa
-*_rsa.key
-
-# Credenciais de service account / Firebase
-serviceAccountKey.json
-*serviceAccount*.json
-*service-account*.json
-firebase-adminsdk*.json
-firebase_credentials.json
-
-# Configs de projeto Firebase (contêm API keys do app)
-google-services.json
-GoogleService-Info.plist
-
-# Certificados e bundles TLS
-*.crt
-*.cer
-*.der
-*.csr
-*.pfx
-letsencrypt/
-certbot/
-/etc/letsencrypt/
-
-# ------------------------------------------------------------------------------
-# 2. SEGREDOS DE AMBIENTE / DEPLOY
-# ------------------------------------------------------------------------------
-secrets/
-.secrets/
-*.secret
-*.secrets
-credentials.json
-config/production.yaml
-config/production.yml
-deploy/.env*
-docker-compose.override.yml
-*.tfstate
-*.tfstate.backup
-terraform.tfvars
-
-# ------------------------------------------------------------------------------
-# 3. PYTHON / FASTAPI
-# ------------------------------------------------------------------------------
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-.pytest_cache/
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
-.tox/
-.nox/
-.hyphen/
 venv/
 .venv/
 env/
-ENV/
-.python-version
+.env
+.venv
 
-# ------------------------------------------------------------------------------
-# 4. FLUTTER / DART
-# ------------------------------------------------------------------------------
+# Flutter
 .dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-build/
-pubspec.lock.bak
-*.lock.bak
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/Flutter.framework
-ios/Flutter/Flutter.podspec
-ios/Flutter/App.framework
-ios/Flutter/ephemeral/
-ios/Flutter/Generated.xcconfig
-ios/Flutter/flutter_export_environment.sh
-android/.gradle/
-android/captures/
-android/local.properties
+.build/
+android/app/.gradle/
 android/key.properties
-android/app/debug/
-android/app/profile/
-android/app/release/
-android/.idea/
+android/app/src/main/res/values/*.xml
 *.iml
-*.hprof
 
-# ------------------------------------------------------------------------------
-# 5. BANCO DE DADOS LOCAL / DADOS SENSÍVEIS
-# ------------------------------------------------------------------------------
-*.db
-*.db3
-*.sqlite
-*.sqlite3
-*.sqlite3-journal
-*.db-wal
-*.db-shm
-db.sqlite3
-# Ancorado na raiz: `data/` sem barra inicial ignoraria também as pastas `data/`
-# das features do Flutter (ex.: app/lib/features/background/data/).
-/data/
-/pgdata/
-dump.sql
-*.dump
-backups/
-
-# ------------------------------------------------------------------------------
-# 6. LOGS E ARTEFATOS DE RUNTIME
-# ------------------------------------------------------------------------------
-*.log
-logs/
-npm-debug.log*
-yarn-error.log*
-*.pid
-*.seed
-*.pid.lock
-tmp/
-temp/
-.cache/
-
-# ------------------------------------------------------------------------------
-# 7. IDE / EDITORES
-# ------------------------------------------------------------------------------
+# IDE
+.vscode/
 .idea/
-.vscode/*
-!.vscode/settings.example.json
-!.vscode/launch.example.json
 *.swp
 *.swo
 *~
-.sublime-project
-.sublime-workspace
 
-# ------------------------------------------------------------------------------
-# 8. SISTEMA OPERACIONAL
-# ------------------------------------------------------------------------------
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
-desktop.ini
 
-# ------------------------------------------------------------------------------
-# 9. OPENCODE (estado local de sessão — regras/skills permanecem versionados)
-# ------------------------------------------------------------------------------
-.opencode/cache/
-.opencode/tmp/
-.opencode/*.local.*
+# Logs
+*.log
